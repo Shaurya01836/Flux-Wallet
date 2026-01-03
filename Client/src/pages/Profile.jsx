@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { FaArrowLeft, FaCamera, FaSave, FaUser, FaPhone, FaEnvelope } from 'react-icons/fa';
+import { FaArrowLeft, FaCamera, FaSave, FaSignOutAlt, FaUser, FaPhone } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import api from '../api';
 
 const Profile = () => {
@@ -12,10 +11,9 @@ const Profile = () => {
         phoneNumber: ''
     });
     const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState(null); // For success/error messages
+    const [message, setMessage] = useState(null);
 
     useEffect(() => {
-        // Load user from local storage
         const storedUser = JSON.parse(localStorage.getItem('user_info'));
         if (storedUser) {
             setUser(storedUser);
@@ -38,111 +36,137 @@ const Profile = () => {
         setMessage(null);
 
         try {
-            // Send PUT request to backend
-          const response = await api.put(`/api/user/${user.id}`, {
+            const response = await api.put(`/api/user/${user.id}`, {
                 username: formData.username,
                 phoneNumber: formData.phoneNumber
             });
 
-            // Update Local Storage with new data
             const updatedUser = { ...user, ...response.data };
             localStorage.setItem('user_info', JSON.stringify(updatedUser));
             setUser(updatedUser);
             
-            setMessage({ type: 'success', text: 'Profile updated successfully!' });
+            setMessage({ type: 'success', text: 'Saved successfully.' });
+            setTimeout(() => setMessage(null), 3000);
         } catch (error) {
-            console.error("Update failed", error);
-            // Extract error message from backend if available
-            const errorMsg = error.response?.data || "Failed to update profile. Username might be taken.";
+            const errorMsg = error.response?.data || "Update failed.";
             setMessage({ type: 'error', text: errorMsg });
         } finally {
             setLoading(false);
         }
     };
 
+    const handleLogout = () => {
+        if (window.confirm("Log out of Flux?")) {
+            localStorage.removeItem('user_info');
+            localStorage.removeItem('user_token');
+            navigate('/');
+        }
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return "";
+        return new Date(dateString).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    };
+
     if (!user) return null;
 
     return (
-        <div className="min-h-screen bg-gray-50 flex justify-center p-4 font-sans">
-            <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden animate-fade-in relative">
+        <div className="min-h-screen bg-white font-sans text-gray-900">
+            
+            {/* --- Simple Navbar --- */}
+            <div className="max-w-xl mx-auto px-6 py-6 flex items-center justify-between">
+                <button 
+                    onClick={() => navigate('/dashboard')} 
+                    className="p-2 -ml-2 text-gray-400 hover:text-gray-900 transition"
+                >
+                    <FaArrowLeft size={20} />
+                </button>
+                <h1 className="text-lg font-bold">Edit Profile</h1>
+                <div className="w-8"></div> {/* Spacer to center title */}
+            </div>
+
+            <div className="max-w-md mx-auto px-6 pt-4">
                 
-                {/* Header / Cover */}
-                <div className="bg-gradient-to-r from-indigo-600 to-purple-600 h-40 relative">
-                    <button 
-                        onClick={() => navigate('/dashboard')} 
-                        className="absolute top-6 left-6 p-2 bg-white/20 backdrop-blur-md rounded-full text-white hover:bg-white/30 transition"
-                    >
-                        <FaArrowLeft />
-                    </button>
+                {/* --- Avatar & Basic Info --- */}
+                <div className="text-center mb-10">
+                    <div className="relative inline-block">
+                        <img 
+                            src={user.pictureUrl} 
+                            alt={user.name} 
+                            className="w-24 h-24 rounded-full object-cover border-4 border-gray-50 shadow-sm"
+                        />
+                        <div className="absolute bottom-0 right-0 bg-gray-900 text-white p-1.5 rounded-full border-2 border-white">
+                            <FaCamera size={10} />
+                        </div>
+                    </div>
+                    <h2 className="text-xl font-bold mt-4">{user.name}</h2>
+                    <p className="text-gray-500 text-sm">{user.email}</p>
+                    {user.createdAt && (
+                        <p className="text-xs text-gray-400 mt-1">Joined {formatDate(user.createdAt)}</p>
+                    )}
                 </div>
 
-                {/* Avatar & Info */}
-                <div className="px-8 pb-8">
-                    <div className="relative -mt-16 mb-6 flex justify-center">
-                        <div className="w-32 h-32 rounded-full border-4 border-white shadow-lg overflow-hidden bg-gray-200">
-                             {/* Show Google Picture */}
-                             <img src={user.pictureUrl} alt={user.name} className="w-full h-full object-cover" />
-                        </div>
-                        {/* Optional: Camera Icon (Visual only for now) */}
-                        <div className="absolute bottom-2 right-1/2 translate-x-12 bg-gray-900 text-white p-2 rounded-full border-2 border-white shadow-sm cursor-pointer hover:bg-gray-800">
-                            <FaCamera size={12} />
+                {/* --- Feedback Message --- */}
+                {message && (
+                    <div className={`mb-6 p-3 rounded-lg text-sm font-medium text-center ${message.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                        {message.text}
+                    </div>
+                )}
+
+                {/* --- Clean Form --- */}
+                <form onSubmit={handleSave} className="space-y-6">
+                    
+                    <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Username</label>
+                        <div className="flex items-center border-b border-gray-200 py-2 focus-within:border-indigo-600 transition">
+                            <FaUser className="text-gray-300 mr-3" />
+                            <input 
+                                type="text" 
+                                name="username"
+                                value={formData.username} 
+                                onChange={handleChange} 
+                                placeholder="@username"
+                                className="w-full outline-none text-gray-900 font-medium placeholder-gray-300"
+                            />
                         </div>
                     </div>
 
-                    <div className="text-center mb-8">
-                        <h2 className="text-2xl font-bold text-gray-900">{user.name}</h2>
-                        <p className="text-gray-500 text-sm flex items-center justify-center gap-2 mt-1">
-                             <FaEnvelope className="text-gray-400" /> {user.email}
-                        </p>
+                    <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Phone Number</label>
+                        <div className="flex items-center border-b border-gray-200 py-2 focus-within:border-indigo-600 transition">
+                            <FaPhone className="text-gray-300 mr-3" />
+                            <input 
+                                type="tel" 
+                                name="phoneNumber"
+                                value={formData.phoneNumber} 
+                                onChange={handleChange} 
+                                placeholder="+1 000 000 0000"
+                                className="w-full outline-none text-gray-900 font-medium placeholder-gray-300"
+                            />
+                        </div>
                     </div>
 
-                    {/* Feedback Message */}
-                    {message && (
-                        <div className={`mb-6 p-3 rounded-xl text-sm font-medium text-center ${message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                            {message.text}
-                        </div>
-                    )}
-
-                    {/* Edit Form */}
-                    <form onSubmit={handleSave} className="space-y-5">
-                        <div className="relative">
-                            <label className="text-xs font-bold text-gray-500 uppercase ml-1 mb-1 block">Username</label>
-                            <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus-within:border-indigo-500 focus-within:bg-white transition">
-                                <FaUser className="text-gray-400 mr-3" />
-                                <input 
-                                    type="text" 
-                                    name="username"
-                                    value={formData.username} 
-                                    onChange={handleChange}
-                                    placeholder="@username"
-                                    className="w-full bg-transparent outline-none font-medium text-gray-800"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="relative">
-                             <label className="text-xs font-bold text-gray-500 uppercase ml-1 mb-1 block">Phone Number</label>
-                             <div className="flex items-center bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 focus-within:border-indigo-500 focus-within:bg-white transition">
-                                <FaPhone className="text-gray-400 mr-3" />
-                                <input 
-                                    type="tel" 
-                                    name="phoneNumber"
-                                    value={formData.phoneNumber} 
-                                    onChange={handleChange}
-                                    placeholder="+1 234 567 890"
-                                    className="w-full bg-transparent outline-none font-medium text-gray-800"
-                                />
-                            </div>
-                        </div>
-
+                    <div className="pt-6">
                         <button 
                             type="submit" 
                             disabled={loading}
-                            className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-4"
+                            className="w-full bg-gray-900 text-white font-bold py-4 rounded-xl hover:bg-black transition active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2"
                         >
                             {loading ? 'Saving...' : <><FaSave /> Save Changes</>}
                         </button>
-                    </form>
+                    </div>
+
+                </form>
+
+                {/* --- Logout (Separate Section) --- */}
+                <div className="mt-10 pt-10 border-t border-gray-100 text-center">
+                    <button 
+                        onClick={handleLogout}
+                        className="text-red-500 font-semibold text-sm hover:text-red-700 flex items-center justify-center gap-2 mx-auto transition"
+                    >
+                        <FaSignOutAlt /> Sign Out
+                    </button>
+            
                 </div>
 
             </div>
