@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FaArrowLeft, FaCamera, FaSave, FaUser, FaPhone, FaEnvelope } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import api from '../api';
 
 const Profile = () => {
     const navigate = useNavigate();
@@ -38,7 +39,7 @@ const Profile = () => {
 
         try {
             // Send PUT request to backend
-            const response = await axios.put(`http://localhost:8080/api/user/${user.id}`, {
+          const response = await api.put(`/api/user/${user.id}`, {
                 username: formData.username,
                 phoneNumber: formData.phoneNumber
             });

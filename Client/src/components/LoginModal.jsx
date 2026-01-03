@@ -4,6 +4,7 @@ import { jwtDecode } from "jwt-decode";
 import { useNavigate } from 'react-router-dom';
 import { FaBolt, FaTimes } from 'react-icons/fa';
 import axios from 'axios';
+import api from '../api';
 
 const LoginModal = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
@@ -16,13 +17,13 @@ const LoginModal = ({ isOpen, onClose }) => {
       const decoded = jwtDecode(credentialResponse.credential);
       
       // 2. Send to Backend
-      const response = await axios.post('http://localhost:8080/api/auth/google', {
+      const response = await api.post('/api/auth/google', { 
           email: decoded.email,
           name: decoded.name,
           picture: decoded.picture
       });
 
-      // 3. Get UserDTO
+      // 3. Get UserDTOa
       const userDto = response.data;
       console.log("Logged In User:", userDto);
 

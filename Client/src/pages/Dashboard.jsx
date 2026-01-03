@@ -11,6 +11,7 @@ import {
 } from "react-icons/fa";
 import axios from "axios";
 import AddTransactionModal from "../components/AddTransactionModal";
+import api from "../api";
 
 const Dashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,9 +42,7 @@ const Dashboard = () => {
   const refreshData = async (userId) => {
     try {
       // Fetch BalanceDto (contains balance, totalCredit, totalDebit)
-      const balanceRes = await axios.get(
-        `http://localhost:8080/api/payments/balance/${userId}`
-      );
+      const balanceRes = await api.get(`/api/payments/balance/${userId}`);
 
       setStats({
         balance: balanceRes.data.balance || 0.0,
@@ -52,9 +51,7 @@ const Dashboard = () => {
       });
 
       // Fetch Transactions
-      const transactionsRes = await axios.get(
-        `http://localhost:8080/api/payments/user/${userId}`
-      );
+      const transactionsRes = await api.get(`/api/payments/user/${userId}`);
       setTransactions(transactionsRes.data);
     } catch (error) {
       console.error("Error loading dashboard data", error);
@@ -64,7 +61,7 @@ const Dashboard = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure?")) return;
     try {
-      await axios.delete(`http://localhost:8080/api/payments/${id}`);
+    await api.delete(`/api/payments/${id}`);
       refreshData(user.id);
     } catch (error) {
       console.error("Delete failed", error);
