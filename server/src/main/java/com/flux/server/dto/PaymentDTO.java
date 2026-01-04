@@ -11,6 +11,7 @@ public class PaymentDTO {
     private String title;
     private Double amount;
     private String description;
+    private String category ;
     private String type;
     private LocalDateTime date;
     private Long userId;

@@ -12,6 +12,8 @@ import org.jspecify.annotations.Nullable;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -56,17 +58,27 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public @Nullable BalanceDto getUserBalance(Long userId) {
+    public @Nullable BalanceDto getUserBalance(Long userId , String month) {
         Double totalCredit = paymentRepository.getTotalCredit(userId);
         Double totalDebit = paymentRepository.getTotalDebit(userId);
 
         if (totalDebit == null) totalDebit = 0.0;
         if (totalCredit == null) totalCredit = 0.0;
 
+        LocalDate start = LocalDate.parse(month + "-01");
+        LocalDateTime startDateTime = start.atStartOfDay();
+        LocalDateTime endDateTime = start.plusMonths(1).atStartOfDay();
+
+        Double monthlyCredit = paymentRepository.getMonthlyCredit(userId, startDateTime, endDateTime);
+        Double monthlyDebit = paymentRepository.getMonthlyDebit(userId, startDateTime, endDateTime);
+
+        if (monthlyCredit == null) monthlyCredit = 0.0;
+        if (monthlyDebit == null) monthlyDebit = 0.0;
+
         BalanceDto balanceDto = new BalanceDto();
         balanceDto.setBalance(totalCredit - totalDebit);
-        balanceDto.setTotalCredit(totalCredit);
-        balanceDto.setTotalDebit(totalDebit);
+        balanceDto.setTotalCredit(monthlyCredit);
+        balanceDto.setTotalDebit(monthlyDebit);
 
         return balanceDto;
     }

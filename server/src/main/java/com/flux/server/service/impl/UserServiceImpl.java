@@ -1,7 +1,10 @@
 package com.flux.server.service.impl;
 
+import com.flux.server.dto.BudgetDto;
 import com.flux.server.dto.UserDTO;
+import com.flux.server.entity.Budget;
 import com.flux.server.entity.User;
+import com.flux.server.repository.BudgetRepository;
 import com.flux.server.repository.UserRepository;
 import com.flux.server.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import java.util.Optional;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final BudgetRepository budgetRepository;
     private final ModelMapper modelMapper;
 
     @Override
@@ -64,5 +68,46 @@ public class UserServiceImpl implements UserService {
         User savedUser = userRepository.save(user);
 
         return modelMapper.map(savedUser, UserDTO.class);
+    }
+
+    @Override
+    public BudgetDto addBudget(BudgetDto budgetDto) {
+        User user = userRepository.findById(budgetDto.getUser_id()).orElseThrow(() -> new RuntimeException("User not found"));
+
+        Optional<Budget> existingBudget = budgetRepository.findByUserAndMonth(user, budgetDto.getMonth());
+
+        Budget budget;
+        if (existingBudget.isPresent()) {
+            budget = existingBudget.get();
+            budget.setAmount(budgetDto.getAmount());
+        } else {
+            budget = modelMapper.map(budgetDto, Budget.class);
+            budget.setUser(user);
+        }
+
+        Budget savedBudget = budgetRepository.save(budget);
+        return modelMapper.map(savedBudget, BudgetDto.class);
+
+    }
+
+    @Override
+    public BudgetDto getBudget(Long userId, String month) {
+        User user = userRepository.findById(userId).orElseThrow();
+
+        Optional<Budget> budget = budgetRepository.findByUserAndMonth(user, month);
+
+
+        if (budget.isPresent()) {
+            return modelMapper.map(budget.get(), BudgetDto.class);
+        } else {
+            BudgetDto emptyBudget = new BudgetDto();
+
+            emptyBudget.setAmount(0.00);
+            emptyBudget.setUser_id(userId);
+            emptyBudget.setMonth(month);
+            return emptyBudget;
+        }
+
+
     }
 }

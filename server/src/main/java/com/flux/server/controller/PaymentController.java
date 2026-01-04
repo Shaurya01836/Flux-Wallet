@@ -36,8 +36,8 @@ public class PaymentController {
     }
 
     @GetMapping("/balance/{userId}")
-    public ResponseEntity<BalanceDto> getUserBalance(@PathVariable Long userId) {
-        return ResponseEntity.ok(paymentService.getUserBalance(userId));
+    public ResponseEntity<BalanceDto> getUserBalance(@PathVariable Long userId , @RequestParam String month) {
+        return ResponseEntity.ok(paymentService.getUserBalance(userId ,month));
     }
 
 

@@ -1,22 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  FaPlus,
-  FaArrowUp,
-  FaArrowDown,
-  FaSearch,
-  FaBell,
-  FaSignOutAlt,
-  FaTrashAlt,
-  FaPen,       // Added for Edit
-  FaBullseye   // Added for Goal
-} from "react-icons/fa";
 import api from "../api";
 import AddTransactionModal from "../components/AddTransactionModal";
 
+// Import components
+import DashboardHeader from "../components/DashboardHeader";
+import BalanceSection from "../components/BalanceSection";
+import StatCard from "../components/StatCard";
+import TransactionList from "../components/TransactionList";
+import Analytics from "../components/Analytics"; 
+
 const Dashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [transactionToEdit, setTransactionToEdit] = useState(null); // Edit State
+  const [transactionToEdit, setTransactionToEdit] = useState(null); 
+  const [activeTab, setActiveTab] = useState('activity'); 
   const navigate = useNavigate();
 
   // Data State
@@ -28,25 +25,78 @@ const Dashboard = () => {
   });
   const [user, setUser] = useState(null);
 
-  // --- NEW: Filters & Goals State ---
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // Format: YYYY-MM
+  // Filters
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); 
   const [monthlyGoal, setMonthlyGoal] = useState(0);
 
   useEffect(() => {
     const storedUser = JSON.parse(localStorage.getItem("user_info"));
-    const storedGoal = localStorage.getItem("monthly_goal");
-
     if (storedUser) {
       setUser(storedUser);
-      refreshData(storedUser.id);
+      // We don't call refreshData here anymore, 
+      // the second useEffect will handle it since selectedMonth is set initially.
     } else {
       navigate("/");
     }
-
-    if (storedGoal) setMonthlyGoal(parseFloat(storedGoal));
   }, []);
 
-  // --- NEW: Filter Logic (Last 1 Year) ---
+  // --- TRIGGER DATA REFRESH WHEN MONTH OR USER CHANGES ---
+  useEffect(() => {
+    if (user && selectedMonth) {
+        fetchBudget(user.id, selectedMonth);
+        refreshData(user.id, selectedMonth); // <--- Pass Month Here
+    }
+  }, [user, selectedMonth]);
+
+  const fetchBudget = async (userId, month) => {
+    try {
+        const response = await api.get(`/api/user/${userId}?month=${month}`);
+        setMonthlyGoal(response.data.amount || 0);
+    } catch (error) {
+        console.error("Failed to fetch budget", error);
+        setMonthlyGoal(0);
+    }
+  };
+
+  const refreshData = async (userId, month) => {
+    try {
+      // --- UPDATE: Send Month to Backend ---
+      const balanceRes = await api.get(`/api/payments/balance/${userId}?month=${month}`);
+      
+      setStats({
+        balance: balanceRes.data.balance || 0.0,
+        income: balanceRes.data.totalCredit || 0.0,
+        expense: balanceRes.data.totalDebit || 0.0,
+      });
+
+      const transactionsRes = await api.get(`/api/payments/user/${userId}`);
+      setTransactions(transactionsRes.data);
+    } catch (error) {
+      console.error("Error loading dashboard data", error);
+    }
+  };
+
+  const handleSetGoal = async () => {
+    const currentGoal = monthlyGoal === 0 ? "" : monthlyGoal;
+    const goalInput = prompt("Enter your monthly budget limit:", currentGoal);
+    
+    if (goalInput !== null && !isNaN(goalInput) && goalInput.trim() !== "") {
+        const newGoal = parseFloat(goalInput);
+        try {
+            await api.post('/api/user/budget', {
+                amount: newGoal,
+                month: selectedMonth,
+                user_id: user.id 
+            });
+            setMonthlyGoal(newGoal); 
+        } catch (error) {
+            console.error("Failed to set budget", error);
+            alert("Failed to save budget.");
+        }
+    }
+  };
+
+  // Filter Logic
   const monthOptions = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
         const d = new Date();
@@ -62,7 +112,6 @@ const Dashboard = () => {
     return transactions.filter(t => t.date.startsWith(selectedMonth));
   }, [transactions, selectedMonth]);
 
-  // Calculate expense for the selected month for Goal Tracking
   const currentMonthlyExpense = filteredTransactions
     .filter(t => t.type === 'DEBIT')
     .reduce((acc, t) => acc + t.amount, 0);
@@ -75,33 +124,16 @@ const Dashboard = () => {
     }
   };
 
-  const refreshData = async (userId) => {
-    try {
-      const balanceRes = await api.get(`/api/payments/balance/${userId}`);
-      setStats({
-        balance: balanceRes.data.balance || 0.0,
-        income: balanceRes.data.totalCredit || 0.0,
-        expense: balanceRes.data.totalDebit || 0.0,
-      });
-
-      const transactionsRes = await api.get(`/api/payments/user/${userId}`);
-      setTransactions(transactionsRes.data);
-    } catch (error) {
-      console.error("Error loading dashboard data", error);
-    }
-  };
-
   const handleDelete = async (id) => {
     if (!window.confirm("Delete transaction?")) return;
     try {
       await api.delete(`/api/payments/${id}`);
-      refreshData(user.id);
+      refreshData(user.id, selectedMonth); // Pass month here too
     } catch (error) {
       console.error("Delete failed", error);
     }
   };
 
-  // --- NEW: Handle Edit ---
   const handleEdit = (transaction) => {
     setTransactionToEdit(transaction);
     setIsModalOpen(true);
@@ -112,83 +144,21 @@ const Dashboard = () => {
     setIsModalOpen(true);
   };
 
-  // --- NEW: Set Goal ---
-  const handleSetGoal = () => {
-    const goal = prompt("Enter your monthly budget limit:", monthlyGoal || 0);
-    if (goal !== null && !isNaN(goal)) {
-        setMonthlyGoal(parseFloat(goal));
-        localStorage.setItem("monthly_goal", goal);
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return "";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-  };
-
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900">
       <main className="max-w-5xl mx-auto px-6 py-8">
         
-        {/* --- Header --- */}
-        <header className="flex justify-between items-center mb-12">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-gray-400 text-sm">
-              Hello, {user?.name?.split(" ")[0] || "User"}
-            </p>
-          </div>
+        <DashboardHeader 
+          user={user} 
+          onLogout={handleLogout} 
+          onNavigateProfile={() => navigate("/profile")} 
+        />
 
-          <div className="flex items-center gap-4">
-            <button 
-                onClick={handleLogout}
-                className="p-2 text-gray-300 hover:text-gray-900 transition" 
-                title="Log Out"
-            >
-                <FaSignOutAlt size={18} />
-            </button>
-            <div
-              onClick={() => navigate("/profile")}
-              className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden cursor-pointer hover:ring-2 hover:ring-gray-100 transition"
-            >
-              {user?.pictureUrl ? (
-                <img
-                  src={user.pictureUrl}
-                  alt="User"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold">
-                  {user?.name?.[0] || "U"}
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* --- Balance Section --- */}
-        <section className="grid md:grid-cols-3 gap-8 mb-16">
-            
-            {/* Total Balance (Large) */}
-            <div className="md:col-span-1 flex flex-col justify-center">
-                <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-2">Total Balance</p>
-                <h2 className="text-5xl font-extrabold text-gray-900 tracking-tight">
-                    Rs.{stats.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </h2>
-                <div className="mt-8 flex gap-4">
-                    <button 
-                        onClick={handleAdd}
-                        className="bg-gray-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-black transition flex items-center gap-2"
-                    >
-                        <FaPlus size={12} /> Add New
-                    </button>
-                </div>
-            </div>
-
-            {/* Stats (Cards) */}
+        <section className="grid md:grid-cols-3 gap-8 mb-10">
+            <BalanceSection 
+              balance={stats.balance} 
+              onAdd={handleAdd} 
+            />
             <div className="md:col-span-2 grid grid-cols-2 gap-4">
                 <StatCard 
                     label="Income" 
@@ -197,139 +167,60 @@ const Dashboard = () => {
                 />
                 <StatCard 
                     label="Expense" 
-                    amount={stats.expense} // Show total expense
+                    amount={stats.expense} 
                     type="expense" 
-                    // Pass goal props to the Expense Card only
                     goal={monthlyGoal}
-                    currentMonthExpense={currentMonthlyExpense}
+                    currentMonthlyExpense={currentMonthlyExpense}
                     onSetGoal={handleSetGoal}
                 />
             </div>
         </section>
 
-        {/* --- Transactions List --- */}
-        <section>
-            <div className="flex items-center justify-between mb-6 border-b border-gray-100 pb-4">
-                <h3 className="text-lg font-bold text-gray-900">Recent Activity</h3>
-                
-                {/* --- NEW: Month Filter Dropdown --- */}
-                <div className="relative">
-                    <select 
-                        value={selectedMonth} 
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="text-xs font-bold text-gray-500 uppercase tracking-wider bg-transparent outline-none cursor-pointer hover:text-gray-800 transition appearance-none pr-4"
-                    >
-                        {monthOptions.map(option => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                     <FaArrowDown className="absolute right-0 top-0.5 text-gray-400 pointer-events-none" size={10} />
-                </div>
-            </div>
+        {/* Tab Switcher */}
+        <div className="flex gap-2 mb-6 bg-gray-50 p-1 rounded-xl w-fit">
+            <button 
+                onClick={() => setActiveTab('activity')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'activity' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                Activity
+            </button>
+            <button 
+                onClick={() => setActiveTab('analytics')}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'analytics' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+                Analytics
+            </button>
+        </div>
 
-            <div className="space-y-2">
-                {filteredTransactions.length === 0 ? (
-                    <div className="text-center py-16 text-gray-400">
-                        No transactions found in {monthOptions.find(m => m.value === selectedMonth)?.label}.
-                    </div>
-                ) : (
-                    filteredTransactions.map((t) => (
-                        <div 
-                            key={t.id} 
-                            className="group flex items-center justify-between p-4 rounded-2xl hover:bg-gray-50 transition border border-transparent hover:border-gray-100 cursor-default"
-                        >
-                            <div className="flex items-center gap-5">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm ${t.type === 'CREDIT' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                    {t.type === 'CREDIT' ? <FaArrowDown /> : <FaArrowUp />}
-                                </div>
-                                <div>
-                                    <p className="font-bold text-gray-900">{t.title}</p>
-                                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(t.date)}</p>
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-6">
-                                <span className={`font-bold tabular-nums ${t.type === 'CREDIT' ? 'text-emerald-600' : 'text-gray-900'}`}>
-                                    {t.type === 'CREDIT' ? '+' : '-'} {t.amount.toLocaleString()}
-                                </span>
-                             
-                                <div className="flex gap-2 ">
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); handleEdit(t); }}
-                                        className="text-gray-300 hover:text-indigo-600 p-2"
-                                        title="Edit"
-                                    >
-                                        <FaPen size={12} />
-                                    </button>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}
-                                        className="text-gray-300 hover:text-red-500 p-2"
-                                        title="Delete"
-                                    >
-                                        <FaTrashAlt size={12} />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
-        </section>
+        {/* Conditional Rendering */}
+        {activeTab === 'activity' ? (
+            <TransactionList 
+              transactions={filteredTransactions}
+              monthOptions={monthOptions}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+        ) : (
+            <Analytics 
+              transactions={filteredTransactions}
+              monthOptions={monthOptions}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+            />
+        )}
 
       </main>
 
       <AddTransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onTransactionAdded={() => refreshData(user.id)}
-        transactionToEdit={transactionToEdit} // Pass the transaction to edit
+        onTransactionAdded={() => refreshData(user.id, selectedMonth)} 
+        transactionToEdit={transactionToEdit} 
       />
     </div>
   );
 };
-
-// --- Updated StatCard to handle Goal Visualization ---
-const StatCard = ({ label, amount, type, goal, currentMonthExpense, onSetGoal }) => (
-    <div className="bg-gray-50 rounded-2xl p-6 flex flex-col justify-between h-32 border border-gray-100 relative overflow-hidden group">
-        <div className="flex justify-between items-start">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{label}</span>
-            
-            {/* Goal Button (Only for Expense) */}
-            {type === 'expense' && (
-                <button onClick={onSetGoal} className="text-[10px] font-bold text-indigo-500 hover:underline opacity-0 group-hover:opacity-100 transition">
-                    {goal > 0 ? 'Edit Goal' : 'Set Goal'}
-                </button>
-            )}
-
-            <div className={`p-1.5 rounded-full ${type === 'income' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'} ${type === 'expense' ? 'hidden' : ''}`}>
-                {type === 'income' ? <FaArrowDown size={10} /> : <FaArrowUp size={10} />}
-            </div>
-        </div>
-        
-        <div>
-            <p className="text-2xl font-bold text-gray-900">
-                {amount.toLocaleString()}
-            </p>
-            
-            {/* Goal Progress Bar (Only for Expense) */}
-            {type === 'expense' && goal > 0 && (
-                <div className="mt-2">
-                    <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                        <span>{Math.round((currentMonthExpense / goal) * 100)}% of goal</span>
-                        <span>{goal.toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 h-1 rounded-full overflow-hidden">
-                        <div 
-                            className={`h-full rounded-full ${currentMonthExpense > goal ? 'bg-red-500' : 'bg-indigo-500'}`} 
-                            style={{ width: `${Math.min((currentMonthExpense / goal) * 100, 100)}%` }}
-                        ></div>
-                    </div>
-                </div>
-            )}
-        </div>
-    </div>
-);
 
 export default Dashboard;

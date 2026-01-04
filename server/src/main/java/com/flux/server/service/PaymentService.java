@@ -16,5 +16,5 @@ public interface PaymentService {
     List<PaymentDTO> getPaymentsByUser(Long userId);
 
     @Nullable
-    BalanceDto getUserBalance(Long userId);
+    BalanceDto getUserBalance(Long userId , String month);
 }
