@@ -7,7 +7,7 @@ import AddTransactionModal from "../components/AddTransactionModal";
 import DashboardHeader from "../components/DashboardHeader";
 import BalanceSection from "../components/BalanceSection";
 import StatCard from "../components/StatCard";
-import TransactionList from "../components/TransactionList";
+import TransactionList from "../components/Transaction";
 import Analytics from "../components/Analytics"; 
 
 const Dashboard = () => {

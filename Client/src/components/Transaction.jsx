@@ -1,7 +1,7 @@
 import React from "react";
 import { FaArrowUp, FaArrowDown, FaPen, FaTrashAlt } from "react-icons/fa";
 
-const TransactionList = ({ 
+const Transaction = ({ 
   transactions, 
   monthOptions, 
   selectedMonth, 
@@ -101,4 +101,4 @@ const TransactionList = ({
   );
 };
 
-export default TransactionList;
+export default Transaction;
