@@ -1,22 +1,19 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { FaPlus, FaBullseye, FaBolt } from "react-icons/fa";
 import api from "../api";
 import AddTransactionModal from "../components/AddTransactionModal";
-
-// Import components
 import DashboardHeader from "../components/DashboardHeader";
-import BalanceSection from "../components/BalanceSection";
-import StatCard from "../components/StatCard";
 import TransactionList from "../components/Transaction";
-import Analytics from "../components/Analytics"; 
+import Analytics from "../components/Analytics";
 
 const Dashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [transactionToEdit, setTransactionToEdit] = useState(null); 
-  const [activeTab, setActiveTab] = useState('activity'); 
+  const [transactionToEdit, setTransactionToEdit] = useState(null);
+  const [activeTab, setActiveTab] = useState('activity');
   const navigate = useNavigate();
+  const [isServerWaking, setIsServerWaking] = useState(true);
 
-  // Data State
   const [transactions, setTransactions] = useState([]);
   const [stats, setStats] = useState({
     balance: 0.0,
@@ -25,54 +22,69 @@ const Dashboard = () => {
   });
   const [user, setUser] = useState(null);
 
-  // Filters
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); 
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [monthlyGoal, setMonthlyGoal] = useState(0);
 
+
   useEffect(() => {
-    const storedUser = JSON.parse(localStorage.getItem("user_info"));
-    if (storedUser) {
+    const initDashboard = async () => {
+      const storedUser = JSON.parse(localStorage.getItem("user_info"));
+      if (!storedUser) {
+        navigate("/");
+        return;
+      }
       setUser(storedUser);
-      // We don't call refreshData here anymore, 
-      // the second useEffect will handle it since selectedMonth is set initially.
-    } else {
-      navigate("/");
-    }
+
+   
+      try {
+        await api.get("/health-check");
+      } catch (error) {
+        console.error("Server wake-up ping failed (or server already awake)", error);
+      } finally {
+        setIsServerWaking(false); 
+      }
+    };
+
+    initDashboard();
   }, []);
 
-  // --- TRIGGER DATA REFRESH WHEN MONTH OR USER CHANGES ---
+
   useEffect(() => {
     if (user && selectedMonth) {
-        fetchBudget(user.id, selectedMonth);
-        refreshData(user.id, selectedMonth); // <--- Pass Month Here
+      fetchBudget(user.id, selectedMonth);
+      refreshData(user.id, selectedMonth);
     }
   }, [user, selectedMonth]);
 
+  
+
   const fetchBudget = async (userId, month) => {
     try {
-        const response = await api.get(`/api/user/${userId}?month=${month}`);
-        setMonthlyGoal(response.data.amount || 0);
+      const response = await api.get(`/api/user/${userId}?month=${month}`);
+      setMonthlyGoal(response.data.amount || 0);
     } catch (error) {
-        console.error("Failed to fetch budget", error);
-        setMonthlyGoal(0);
+      console.error(error);
+      setMonthlyGoal(0);
     }
   };
 
   const refreshData = async (userId, month) => {
     try {
-      // --- UPDATE: Send Month to Backend ---
       const balanceRes = await api.get(`/api/payments/balance/${userId}?month=${month}`);
       
+      const income = balanceRes.data.monthlyCredit || 0.0;
+      const expense = balanceRes.data.monthlyDebit || 0.0;
+
       setStats({
-        balance: balanceRes.data.balance || 0.0,
-        income: balanceRes.data.totalCredit || 0.0,
-        expense: balanceRes.data.totalDebit || 0.0,
+        balance: income - expense,
+        income: income,
+        expense: expense,
       });
 
       const transactionsRes = await api.get(`/api/payments/user/${userId}`);
       setTransactions(transactionsRes.data);
     } catch (error) {
-      console.error("Error loading dashboard data", error);
+      console.error(error);
     }
   };
 
@@ -81,40 +93,35 @@ const Dashboard = () => {
     const goalInput = prompt("Enter your monthly budget limit:", currentGoal);
     
     if (goalInput !== null && !isNaN(goalInput) && goalInput.trim() !== "") {
-        const newGoal = parseFloat(goalInput);
-        try {
-            await api.post('/api/user/budget', {
-                amount: newGoal,
-                month: selectedMonth,
-                user_id: user.id 
-            });
-            setMonthlyGoal(newGoal); 
-        } catch (error) {
-            console.error("Failed to set budget", error);
-            alert("Failed to save budget.");
-        }
+      const newGoal = parseFloat(goalInput);
+      try {
+        await api.post('/api/user/budget', {
+          amount: newGoal,
+          month: selectedMonth,
+          user_id: user.id
+        });
+        setMonthlyGoal(newGoal);
+      } catch (error) {
+        console.error(error);
+        alert("Failed to save budget.");
+      }
     }
   };
 
-  // Filter Logic
   const monthOptions = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => {
-        const d = new Date();
-        d.setMonth(d.getMonth() - i);
-        return {
-            value: d.toISOString().slice(0, 7),
-            label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-        };
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      return {
+        value: d.toISOString().slice(0, 7),
+        label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      };
     });
   }, []);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => t.date.startsWith(selectedMonth));
   }, [transactions, selectedMonth]);
-
-  const currentMonthlyExpense = filteredTransactions
-    .filter(t => t.type === 'DEBIT')
-    .reduce((acc, t) => acc + t.amount, 0);
 
   const handleLogout = () => {
     if (window.confirm("Log out?")) {
@@ -128,9 +135,9 @@ const Dashboard = () => {
     if (!window.confirm("Delete transaction?")) return;
     try {
       await api.delete(`/api/payments/${id}`);
-      refreshData(user.id, selectedMonth); // Pass month here too
+      refreshData(user.id, selectedMonth);
     } catch (error) {
-      console.error("Delete failed", error);
+      console.error(error);
     }
   };
 
@@ -144,9 +151,26 @@ const Dashboard = () => {
     setIsModalOpen(true);
   };
 
+  const remaining = monthlyGoal - stats.expense;
+  const percentage = monthlyGoal > 0 ? Math.round((stats.expense / monthlyGoal) * 100) : 0;
+
+  if (isServerWaking) {
+      return (
+          <div className="min-h-screen bg-white flex flex-col items-center justify-center text-center p-6">
+              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-6 animate-pulse">
+                  <FaBolt size={32} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">Connecting to Server...</h2>
+              <p className="text-sm text-gray-500 max-w-xs">
+                  This may take up to 60 seconds if the server was sleeping. Please wait.
+              </p>
+          </div>
+      );
+  }
+
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-900">
-      <main className="max-w-5xl mx-auto px-6 py-8">
+    <div className="min-h-screen bg-gray-50/30 font-sans text-gray-900">
+      <main className="max-w-5xl mx-auto px-4 md:px-6 py-8">
         
         <DashboardHeader 
           user={user} 
@@ -154,45 +178,76 @@ const Dashboard = () => {
           onNavigateProfile={() => navigate("/profile")} 
         />
 
-        <section className="grid md:grid-cols-3 gap-8 mb-10">
-            <BalanceSection 
-              balance={stats.balance} 
-              onAdd={handleAdd} 
-            />
-            <div className="md:col-span-2 grid grid-cols-2 gap-4">
-                <StatCard 
-                    label="Income" 
-                    amount={stats.income} 
-                    type="income" 
-                />
-                <StatCard 
-                    label="Expense" 
-                    amount={stats.expense} 
-                    type="expense" 
-                    goal={monthlyGoal}
-                    currentMonthlyExpense={currentMonthlyExpense}
-                    onSetGoal={handleSetGoal}
-                />
-            </div>
+        <section className="mb-8 md:mb-10">
+          <div className="rounded-3xl p-6 md:p-8 border border-gray-100 shadow-lg shadow-gray-100/50 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-10">
+             
+             <div className="w-full text-left">
+                <h1 className={`text-4xl md:text-6xl font-extrabold tracking-tight mb-2 ${monthlyGoal > 0 && remaining < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                   Rs. {monthlyGoal > 0 ? remaining.toLocaleString() : stats.balance.toLocaleString()}
+                </h1>
+                
+                <div className="flex items-start md:items-center gap-3 text-sm font-bold text-gray-500">
+                   <span className={percentage > 100 ? "text-red-500" : "text-indigo-600"}>
+                      {monthlyGoal > 0 ? `${percentage}% Used` : "Net Balance"}
+                   </span>
+                   
+                   {monthlyGoal > 0 && (
+                       <>
+                         <span className="text-gray-300">|</span>
+                         <span>Goal: {monthlyGoal.toLocaleString()}</span>
+                       </>
+                   )}
+                </div>
+             </div>
+
+             <div className="w-full md:w-auto min-w-50 flex flex-col gap-4">
+                <div className="flex justify-between items-center text-sm">
+                   <span className="text-gray-400 font-bold uppercase text-xs">Income</span>
+                   <span className="font-bold text-gray-900">Rs. {stats.income.toLocaleString()}</span>
+                </div>
+                
+                <div className="flex justify-between items-center text-sm">
+                   <span className="text-gray-400 font-bold uppercase text-xs">Expense</span>
+                   <span className="font-bold text-gray-900">Rs. {stats.expense.toLocaleString()}</span>
+                </div>
+
+                <div className="h-px bg-gray-100 my-1"></div>
+
+                <button 
+                   onClick={handleSetGoal}
+                   className="text-xs font-bold text-indigo-600 hover:text-indigo-800 text-right uppercase tracking-wide transition"
+                >
+                   {monthlyGoal > 0 ? "Edit Goal" : "Set Goal"}
+                </button>
+             </div>
+
+          </div>
         </section>
 
-        {/* Tab Switcher */}
-        <div className="flex gap-2 mb-6 bg-gray-50 p-1 rounded-xl w-fit">
+        <div className="flex justify-between items-center mb-6">
+            <div className="flex gap-1 bg-white p-1 rounded-xl border border-gray-100 shadow-sm w-full md:w-auto">
+                <button 
+                    onClick={() => setActiveTab('activity')}
+                    className={`flex-1 md:flex-none px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition ${activeTab === 'activity' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                >
+                    Activity
+                </button>
+                <button 
+                    onClick={() => setActiveTab('analytics')}
+                    className={`flex-1 md:flex-none px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition ${activeTab === 'analytics' ? 'bg-gray-900 text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                >
+                    Analytics
+                </button>
+            </div>
+
             <button 
-                onClick={() => setActiveTab('activity')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'activity' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                onClick={handleAdd}
+                className="hidden md:flex bg-gray-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-black transition items-center gap-2 shadow-lg shadow-gray-200"
             >
-                Activity
-            </button>
-            <button 
-                onClick={() => setActiveTab('analytics')}
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition ${activeTab === 'analytics' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-                Analytics
+                <FaPlus size={12} /> Add Transaction
             </button>
         </div>
 
-        {/* Conditional Rendering */}
         {activeTab === 'activity' ? (
             <TransactionList 
               transactions={filteredTransactions}
@@ -212,6 +267,15 @@ const Dashboard = () => {
         )}
 
       </main>
+
+      <div className="fixed bottom-8 right-8 z-40 md:hidden">
+            <button 
+                onClick={handleAdd}
+                className="bg-gray-900 text-white p-4 rounded-full shadow-xl hover:bg-black transition active:scale-95"
+            >
+                <FaPlus size={20} /> 
+            </button>
+      </div>
 
       <AddTransactionModal
         isOpen={isModalOpen}

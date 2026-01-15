@@ -52,7 +52,7 @@ const Analytics = ({ transactions, monthOptions, selectedMonth, setSelectedMonth
       </div>
 
       {/* Analytics Content */}
-      <div className="bg-white p-6 hover:bg-gray-50 rounded-xl">
+      <div className="p-6 rounded-xl">
         {categoryStats.total === 0 ? (
             <div className="text-center py-12 text-gray-400">
                 No expenses found in {monthOptions.find(m => m.value === selectedMonth)?.label}.

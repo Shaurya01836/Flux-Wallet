@@ -12,13 +12,6 @@ public interface PaymentRepository extends JpaRepository<Payment , Long> {
 
     List<Payment> findByUserIdOrderByDateDesc(Long userId);
 
-    //  All-Time Stats
-    @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.user.id = :userId AND p.type = 'CREDIT'")
-    Double getTotalCredit(@Param("userId") Long userId);
-
-    @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.user.id = :userId AND p.type = 'DEBIT'")
-    Double getTotalDebit(@Param("userId") Long userId);
-
     //  Monthly Stats
     @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.user.id = :userId AND p.type = 'CREDIT' AND p.date BETWEEN :startDate AND :endDate")
     Double getMonthlyCredit(@Param("userId") Long userId, @Param("startDate") LocalDateTime startDate, @Param("endDate") LocalDateTime endDate);

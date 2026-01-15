@@ -4,9 +4,7 @@ import lombok.Data;
 
 @Data
 public class BalanceDto {
-
-    private Double totalCredit;
-    private Double totalDebit;
-    private Double balance;
+    private Double monthlyCredit;
+    private Double monthlyDebit;
 
 }

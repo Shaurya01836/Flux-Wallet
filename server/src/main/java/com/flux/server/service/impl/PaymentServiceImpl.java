@@ -59,11 +59,6 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public @Nullable BalanceDto getUserBalance(Long userId , String month) {
-        Double totalCredit = paymentRepository.getTotalCredit(userId);
-        Double totalDebit = paymentRepository.getTotalDebit(userId);
-
-        if (totalDebit == null) totalDebit = 0.0;
-        if (totalCredit == null) totalCredit = 0.0;
 
         LocalDate start = LocalDate.parse(month + "-01");
         LocalDateTime startDateTime = start.atStartOfDay();
@@ -76,9 +71,8 @@ public class PaymentServiceImpl implements PaymentService {
         if (monthlyDebit == null) monthlyDebit = 0.0;
 
         BalanceDto balanceDto = new BalanceDto();
-        balanceDto.setBalance(totalCredit - totalDebit);
-        balanceDto.setTotalCredit(monthlyCredit);
-        balanceDto.setTotalDebit(monthlyDebit);
+        balanceDto.setMonthlyCredit(monthlyCredit);
+        balanceDto.setMonthlyDebit(monthlyDebit);
 
         return balanceDto;
     }
