@@ -7,39 +7,31 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
     title: "",
     amount: "",
     type: "DEBIT",
-    category: "",    // New State
-    description: "", // New State
+    category: "",    
+    description: "", 
     date: "",
   });
 
-  // Default suggestions for the category input
   const defaultCategories = [
-    "Food & Dining",
-    "Shopping",
-    "Transportation",
-    "Bills & Utilities",
-    "Entertainment",
-    "Health & Fitness",
-    "Salary",
-    "Freelance",
-    "Investment",
-    "Other"
+    "Food & Dining", "Shopping", "Transportation", "Bills & Utilities", 
+    "Entertainment", "Health & Fitness", "Salary", "Freelance", "Investment", "Other"
   ];
 
-  // Populate form if editing
   useEffect(() => {
     if (transactionToEdit) {
       setForm({
         title: transactionToEdit.title,
         amount: transactionToEdit.amount,
         type: transactionToEdit.type,
-        category: transactionToEdit.category || "",       // Load existing category
-        description: transactionToEdit.description || "", // Load existing description
+        category: transactionToEdit.category || "",       
+        description: transactionToEdit.description || "", 
+        // Keep only the YYYY-MM-DD part for the input field
         date: transactionToEdit.date ? transactionToEdit.date.split('T')[0] : "",
       });
     } else {
-      // Reset form for new transaction
-      setForm({ title: "", amount: "", type: "DEBIT", category: "", description: "", date: "" });
+      // Default to today's date for new transactions
+      const today = new Date().toISOString().split('T')[0];
+      setForm({ title: "", amount: "", type: "DEBIT", category: "", description: "", date: today });
     }
   }, [transactionToEdit, isOpen]);
 
@@ -51,18 +43,50 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
     if (!user) return;
 
     try {
+      // --- FIX: Preserve Time Logic ---
+      let datePayload = undefined;
+
+      if (form.date) {
+          // 1. Parse the input date (YYYY-MM-DD) components
+          const [year, month, day] = form.date.split('-').map(Number);
+          
+          // 2. Determine the time to use
+          let hours = 0, minutes = 0, seconds = 0;
+          
+          if (transactionToEdit && transactionToEdit.date) {
+              // EDIT: Preserve the original time
+              const original = new Date(transactionToEdit.date);
+              hours = original.getHours();
+              minutes = original.getMinutes();
+              seconds = original.getSeconds();
+          } else {
+              // NEW: Use the current time (so it doesn't default to 00:00)
+              const now = new Date();
+              hours = now.getHours();
+              minutes = now.getMinutes();
+              seconds = now.getSeconds();
+          }
+
+          // 3. Construct new Date object (Month is 0-indexed in JS)
+          const finalDate = new Date(year, month - 1, day, hours, minutes, seconds);
+          
+          // 4. Convert to ISO for API
+          datePayload = finalDate.toISOString();
+      }
+      // --------------------------------
+
       const payload = {
         userId: user.id,
         title: form.title,
         amount: parseFloat(form.amount),
         type: form.type,
-        category: form.category,         // Send Category
-        description: form.description,   // Send Description
-        date: form.date ? new Date(form.date).toISOString() : undefined
+        category: form.category,         
+        description: form.description,   
+        date: datePayload
       };
 
       if (transactionToEdit) {
-        // Workaround: Delete old -> Create new
+        // Delete old -> Create new (Backend Workaround)
         await api.delete(`/api/payments/${transactionToEdit.id}`);
       }
 
@@ -80,7 +104,6 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm p-4 transition-all">
       <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative animate-slide-up max-h-[90vh] overflow-y-auto">
         
-        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-gray-900">
             {transactionToEdit ? "Edit Transaction" : "New Transaction"}
@@ -92,7 +115,6 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
-          {/* Title */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Title</label>
             <input
@@ -105,19 +127,17 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
             />
           </div>
 
-          {/* Category (Required + Suggestions) */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
             <input
               type="text"
               required
-              list="category-suggestions" // Links to the datalist below
+              list="category-suggestions" 
               placeholder="Select or type..."
               className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 outline-none focus:border-indigo-500 font-medium"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
             />
-            {/* Suggestions List */}
             <datalist id="category-suggestions">
                 {defaultCategories.map((cat) => (
                     <option key={cat} value={cat} />
@@ -125,7 +145,6 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
             </datalist>
           </div>
 
-          {/* Amount & Type Row */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Amount</label>
@@ -152,7 +171,6 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
             </div>
           </div>
           
-           {/* Date Picker */}
            <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
               <input
@@ -163,7 +181,6 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
               />
             </div>
 
-            {/* Description (Optional) */}
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
                   Description <span className="text-gray-300 font-normal">(Optional)</span>

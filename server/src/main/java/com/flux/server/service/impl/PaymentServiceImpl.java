@@ -35,6 +35,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         Payment payment = modelMapper.map(paymentDTO, Payment.class);
         payment.setUser(user);
+        payment.setDate(paymentDTO.getDate());
 
         paymentRepository.save(payment);
         return modelMapper.map(payment, PaymentDTO.class);

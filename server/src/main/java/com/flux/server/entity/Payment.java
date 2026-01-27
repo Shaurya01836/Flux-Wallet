@@ -30,7 +30,6 @@ public class Payment {
     private String category ;
 
     @Column(nullable = false)
-    @CreationTimestamp
     private LocalDateTime date;
 
     @ManyToOne()
