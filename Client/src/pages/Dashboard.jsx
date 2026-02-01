@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaArrowUp, FaArrowDown, FaWallet } from "react-icons/fa";
+import { FaPlus, FaArrowUp, FaArrowDown, FaWallet, FaServer } from "react-icons/fa";
 import api from "../api";
 import AddTransactionModal from "../components/AddTransactionModal";
 import DashboardHeader from "../components/DashboardHeader";
@@ -9,6 +9,8 @@ import Analytics from "../components/Analytics";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  
+  // --- State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState(null);
   const [activeTab, setActiveTab] = useState('activity');
@@ -17,24 +19,43 @@ const Dashboard = () => {
   const [user, setUser] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [monthlyGoal, setMonthlyGoal] = useState(0);
+  
+  // --- Loading States ---
   const [isLoading, setIsLoading] = useState(true);
+  const [isServerWaking, setIsServerWaking] = useState(true); // <--- RESTORED THIS
 
+  // --- Init & Server Wake-up ---
   useEffect(() => {
-    const init = async () => {
-      const u = JSON.parse(localStorage.getItem("user_info"));
-      if (!u) return navigate("/");
-      setUser(u);
-      setIsLoading(false);
+    const initDashboard = async () => {
+      const storedUser = JSON.parse(localStorage.getItem("user_info"));
+      if (!storedUser) {
+        navigate("/");
+        return;
+      }
+      setUser(storedUser);
+
+      // 1. Wake up the server
+      try {
+        console.log("Pinging server...");
+        await api.get("/health-check"); // This request will "hang" until server wakes
+      } catch (error) {
+        console.warn("Server wake-up ping finished (or failed), proceeding...", error);
+      } finally {
+        // 2. Once response comes back (or fails), we know server is awake
+        setIsServerWaking(false);
+        setIsLoading(false);
+      }
     };
-    init();
+    initDashboard();
   }, [navigate]);
 
+  // --- Data Fetching (Only runs after server is awake) ---
   useEffect(() => {
-    if (user && selectedMonth) {
+    if (!isServerWaking && user && selectedMonth) {
       fetchBudget(user.id, selectedMonth);
       refreshData(user.id, selectedMonth);
     }
-  }, [user, selectedMonth]);
+  }, [isServerWaking, user, selectedMonth]);
 
   const fetchBudget = async (uid, m) => {
     try {
@@ -66,6 +87,7 @@ const Dashboard = () => {
     }
   };
 
+  // --- Calculations ---
   const remaining = monthlyGoal - stats.expense;
   const pct = monthlyGoal > 0 ? Math.min(Math.round((stats.expense / monthlyGoal) * 100), 100) : 0;
   const isOver = monthlyGoal > 0 && stats.expense > monthlyGoal;
@@ -76,10 +98,33 @@ const Dashboard = () => {
     return { value: d.toISOString().slice(0, 7), label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) };
   }), []);
 
-  if (isLoading) return null;
+  // --- 1. SERVER WAKING SCREEN ---
+  if (isServerWaking) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center">
+        <div className="relative mb-6">
+           <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+           <div className="absolute inset-0 flex items-center justify-center">
+              <FaServer className="text-indigo-400 text-xl" />
+           </div>
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Waking up Server...</h2>
+        <p className="text-gray-400 text-sm max-w-xs leading-relaxed">
+          Since we use a free server, it goes to sleep when inactive. 
+          <br /><br />
+          <span className="text-indigo-400 font-bold">This may take up to 60 seconds.</span>
+          <br />
+          Please don't close the tab.
+        </p>
+      </div>
+    );
+  }
 
+  // --- 2. REGULAR LOADING SCREEN ---
+  if (isLoading) return <div className="min-h-screen bg-gray-900"></div>;
+
+  // --- 3. MAIN DASHBOARD ---
   return (
-   
     <div className="min-h-screen bg-gray-900 font-sans text-gray-900">
       
       {/* --- UPPER HALF: Gray & Fixed Content --- */}
@@ -89,7 +134,7 @@ const Dashboard = () => {
             {/* Header (White Text) */}
             <DashboardHeader user={user} onLogout={() => { localStorage.clear(); navigate("/"); }} onNavigateProfile={() => navigate("/profile")} />
 
-            {/* Hero Card (Slightly Lighter Gray for Contrast) */}
+            {/* Hero Card */}
             <section className="relative overflow-hidden text-white rounded-md p-6 shadow-2xl shadow-black/20 border border-gray-700/50">
                 <div className="relative z-10 flex flex-col justify-between h-full gap-5">
                     
@@ -150,7 +195,7 @@ const Dashboard = () => {
       </div>
 
       {/* --- LOWER HALF: White "Sheet" Effect --- */}
-      <div className="bg-[#F8FAFC] min-h-screen relative -mt-6 px-5 pt-8 pb-24 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+      <div className="bg-[#F8FAFC] min-h-screen rounded-t-xl relative mt-4 px-5 pt-8 pb-24 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
         <div className="max-w-3xl mx-auto">
             
             {/* Tabs */}
@@ -179,8 +224,8 @@ const Dashboard = () => {
       </div>
 
       {/* FAB (Floating Action Button) */}
-      <div className="fixed bottom-6 right-6 z-40 ">
-        <button onClick={() => { setTransactionToEdit(null); setIsModalOpen(true); }} className="w-10 h-10 bg-gray-900 text-white rounded-full shadow-lg shadow-gray-900/30 flex items-center justify-center hover:scale-105 active:scale-95 transition"><FaPlus size={18} /></button>
+      <div className="fixed bottom-6 right-6 z-40">
+        <button onClick={() => { setTransactionToEdit(null); setIsModalOpen(true); }} className="w-14 h-14 bg-gray-900 text-white rounded-full shadow-lg shadow-gray-900/30 flex items-center justify-center hover:scale-105 active:scale-95 transition"><FaPlus size={18} /></button>
       </div>
 
       <AddTransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onTransactionAdded={() => refreshData(user.id, selectedMonth)} transactionToEdit={transactionToEdit} />
