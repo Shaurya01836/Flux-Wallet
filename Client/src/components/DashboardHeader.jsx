@@ -5,7 +5,7 @@ const DashboardHeader = ({ user, onLogout, onNavigateProfile }) => {
   return (
     <header className="flex justify-between items-center mb-12">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-white">Dashboard</h1>
         <p className="text-gray-400 text-sm">
           Hello, {user?.name?.split(" ")[0] || "User"}
         </p>
