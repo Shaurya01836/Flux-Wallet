@@ -24,6 +24,7 @@ public class User {
 
     private String phoneNumber;
 
+    @Column(length = 2000)
     private String pictureUrl;
 
     private LocalDateTime createdAt;
