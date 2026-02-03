@@ -1,6 +1,7 @@
 package com.flux.server.repository;
 
 import com.flux.server.entity.Payment;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,7 +11,7 @@ import java.util.List;
 
 public interface PaymentRepository extends JpaRepository<Payment , Long> {
 
-    List<Payment> findByUserIdOrderByDateDesc(Long userId);
+    List<Payment> findByUserIdOrderByDateDesc(Long userId , Pageable pageable);
 
     //  Monthly Stats
     @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.user.id = :userId AND p.type = 'CREDIT' AND p.date BETWEEN :startDate AND :endDate")

@@ -5,6 +5,8 @@ import com.flux.server.dto.BalanceDto;
 import com.flux.server.dto.PaymentDTO;
 import com.flux.server.service.PaymentService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,8 +27,10 @@ public class PaymentController {
     }
 
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<PaymentDTO>> getUserPayment(@PathVariable Long userId) {
-        return ResponseEntity.ok(paymentService.getPaymentsByUser(userId));
+    public ResponseEntity<List<PaymentDTO>> getUserPayment(@PathVariable Long userId ,
+                                                           @RequestParam(defaultValue = "0") int page , @RequestParam(defaultValue = "5") int size) {
+        Pageable pageable = PageRequest.of(page , size) ;
+        return ResponseEntity.ok(paymentService.getPaymentsByUser(userId , pageable));
     }
 
 

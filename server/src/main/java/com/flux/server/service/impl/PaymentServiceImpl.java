@@ -10,6 +10,7 @@ import com.flux.server.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.Nullable;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -50,9 +51,9 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public @Nullable List<PaymentDTO> getPaymentsByUser(Long userId) {
+    public @Nullable List<PaymentDTO> getPaymentsByUser(Long userId , Pageable pageable) {
 
-        List<Payment> payments = paymentRepository.findByUserIdOrderByDateDesc(userId);
+        List<Payment> payments = paymentRepository.findByUserIdOrderByDateDesc(userId , pageable);
 
         return payments.stream().map(payment ->
                 modelMapper.map(payment, PaymentDTO.class)).collect(Collectors.toList());
