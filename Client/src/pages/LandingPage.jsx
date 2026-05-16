@@ -27,7 +27,7 @@ const LandingPage = () => {
         const response = await api.post('/api/auth/google', {
              email: userInfo.data.email,
              name: userInfo.data.name,
-             pictureUrl: userInfo.data.picture
+             picture: userInfo.data.picture
         });
 
         localStorage.setItem('user_token', response.data.token);

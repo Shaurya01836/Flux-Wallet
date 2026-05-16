@@ -7,6 +7,7 @@ import DashboardHeader from "../components/DashboardHeader";
 import TransactionList from "../components/Transaction";
 import Analytics from "../components/Analytics";
 import DeleteTransactionModal from "../components/DeleteTransactionModal";
+import TransactionDetailModal from "../components/TransactionDetailModal";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -15,7 +16,10 @@ const Dashboard = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [transactionToEdit, setTransactionToEdit] = useState(null);
   const [activeTab, setActiveTab] = useState("activity");
-  
+
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [transactionToView, setTransactionToView] = useState(null);
+
   // Transaction Data
   const [transactions, setTransactions] = useState([]);
   const [page, setPage] = useState(0);
@@ -37,7 +41,7 @@ const Dashboard = () => {
 
   // --- Loading States ---
   const [isLoading, setIsLoading] = useState(true);
-  const [isServerWaking, setIsServerWaking] = useState(true); 
+  const [isServerWaking, setIsServerWaking] = useState(true);
 
   // --- 1. Init & Server Wake-up ---
   useEffect(() => {
@@ -72,8 +76,8 @@ const Dashboard = () => {
   // --- 3. Initial Transaction Load (Page 0) ---
   useEffect(() => {
     if (!isServerWaking && user) {
-        // Reset list and load page 0
-        loadTransactions(0, true);
+      // Reset list and load page 0
+      loadTransactions(0, true);
     }
   }, [isServerWaking, user]);
 
@@ -103,35 +107,35 @@ const Dashboard = () => {
   const loadTransactions = useCallback(async (pageNum, shouldReset = false) => {
     if (!user) return;
     setIsFetchingTxns(true);
-    
-    try {
-        const pageSize = 10;
-        const res = await api.get(`/api/payments/user/${user.id}?page=${pageNum}&size=${pageSize}`);
-        const newData = res.data;
 
-        setTransactions(prev => {
-            if (shouldReset) return newData;
-            
-            // --- FIX: Filter out duplicates based on ID ---
-            const existingIds = new Set(prev.map(t => t.id));
-            const uniqueNewData = newData.filter(t => !existingIds.has(t.id));
-            
-            return [...prev, ...uniqueNewData];
-        });
-        
-        // If we got fewer items than requested, we reached the end
-        setHasMore(newData.length === pageSize);
-        setPage(pageNum);
+    try {
+      const pageSize = 10;
+      const res = await api.get(`/api/payments/user/${user.id}?page=${pageNum}&size=${pageSize}`);
+      const newData = res.data;
+
+      setTransactions(prev => {
+        if (shouldReset) return newData;
+
+        // --- FIX: Filter out duplicates based on ID ---
+        const existingIds = new Set(prev.map(t => t.id));
+        const uniqueNewData = newData.filter(t => !existingIds.has(t.id));
+
+        return [...prev, ...uniqueNewData];
+      });
+
+      // If we got fewer items than requested, we reached the end
+      setHasMore(newData.length === pageSize);
+      setPage(pageNum);
     } catch (error) {
-        console.error("Failed to load transactions", error);
+      console.error("Failed to load transactions", error);
     } finally {
-        setIsFetchingTxns(false);
+      setIsFetchingTxns(false);
     }
   }, [user]);
 
   const handleLoadMore = () => {
     if (!isFetchingTxns && hasMore) {
-        loadTransactions(page + 1);
+      loadTransactions(page + 1);
     }
   };
 
@@ -160,23 +164,23 @@ const Dashboard = () => {
   const confirmDelete = async () => {
     if (!transactionToDelete) return;
     try {
-        await api.delete(`/api/payments/${transactionToDelete}`);
-        // Optimistic update: remove from UI immediately
-        setTransactions(prev => prev.filter(t => t.id !== transactionToDelete));
-        // Refresh stats
-        fetchStats(user.id, selectedMonth);
-        setIsDeleteModalOpen(false);
-        setTransactionToDelete(null);
+      await api.delete(`/api/payments/${transactionToDelete}`);
+      // Optimistic update: remove from UI immediately
+      setTransactions(prev => prev.filter(t => t.id !== transactionToDelete));
+      // Refresh stats
+      fetchStats(user.id, selectedMonth);
+      setIsDeleteModalOpen(false);
+      setTransactionToDelete(null);
     } catch (error) {
-        alert("Failed to delete transaction");
-        setIsDeleteModalOpen(false);
+      alert("Failed to delete transaction");
+      setIsDeleteModalOpen(false);
     }
   };
 
   const handleTransactionAdded = () => {
-      // Reload stats and reset list to show new item at top
-      fetchStats(user.id, selectedMonth);
-      loadTransactions(0, true);
+    // Reload stats and reset list to show new item at top
+    fetchStats(user.id, selectedMonth);
+    loadTransactions(0, true);
   };
 
   // --- Filters & Calcs ---
@@ -205,28 +209,76 @@ const Dashboard = () => {
     [],
   );
 
-  if (isServerWaking) {
+  if (isServerWaking || isLoading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-6 text-center">
-        <div className="relative mb-6">
-          <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <FaServer className="text-indigo-400 text-xl" />
+      <div className="min-h-screen bg-[#06080F] font-sans overflow-hidden relative">
+        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-rose-600/5 rounded-full blur-[120px] pointer-events-none"></div>
+
+        <div className="pt-6 pb-12 px-5 md:pt-10 relative z-10 max-w-3xl mx-auto">
+          {/* Header Skeleton */}
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <div className="h-8 w-24 bg-white/10 rounded-md animate-pulse mb-2"></div>
+              <div className="h-4 w-40 bg-white/5 rounded-md animate-pulse"></div>
+            </div>
+            <div className="w-24 h-12 bg-white/10 rounded-[1.5rem] animate-pulse"></div>
+          </div>
+
+          {/* Main Card Skeleton */}
+          <div className="rounded-[2rem] p-8 border border-white/5 bg-white/[0.02] mb-4">
+            <div className="flex justify-between items-center mb-8">
+              <div className="h-4 w-24 bg-white/10 rounded-md animate-pulse"></div>
+              <div className="h-8 w-20 bg-white/10 rounded-full animate-pulse"></div>
+            </div>
+            <div className="h-12 w-48 bg-white/10 rounded-md animate-pulse mb-8"></div>
+            
+            <div className="bg-black/20 p-5 rounded-2xl border border-white/5">
+              <div className="h-1.5 w-full bg-white/10 rounded-full animate-pulse mb-6"></div>
+              <div className="flex divide-x divide-white/5">
+                <div className="flex-1 pr-4">
+                   <div className="h-10 w-full bg-white/5 rounded-xl animate-pulse"></div>
+                </div>
+                <div className="flex-1 pl-4">
+                   <div className="h-10 w-full bg-white/5 rounded-xl animate-pulse"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <h2 className="text-2xl font-bold mb-2">Waking up Server...</h2>
-        <p className="text-gray-400 text-sm max-w-xs leading-relaxed">
-          This may take up to 60 seconds. Please wait.
-        </p>
+
+        {/* Bottom Section Skeleton */}
+        <div className="bg-[#FAFAFA] min-h-screen rounded-t-[2.5rem] px-5 pt-8 relative z-20 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] mt-[-2rem]">
+           <div className="max-w-3xl mx-auto">
+             <div className="h-12 w-full bg-gray-200/50 rounded-2xl animate-pulse mb-8"></div>
+             
+             <div className="space-y-4">
+               {[1, 2, 3, 4, 5].map(i => (
+                 <div key={i} className="flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                   <div className="flex items-center gap-4">
+                     <div className="w-12 h-12 bg-gray-100 rounded-xl animate-pulse"></div>
+                     <div>
+                       <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-2"></div>
+                       <div className="h-3 w-16 bg-gray-100 rounded animate-pulse"></div>
+                     </div>
+                   </div>
+                   <div className="h-5 w-16 bg-gray-200 rounded animate-pulse"></div>
+                 </div>
+               ))}
+             </div>
+           </div>
+        </div>
       </div>
     );
   }
 
-  if (isLoading) return <div className="min-h-screen bg-gray-900"></div>;
-
   return (
-    <div className="min-h-screen bg-gray-900 font-sans text-gray-900">
-      <div className="pt-6 pb-12 px-5 md:pt-10">
+    <div className="min-h-screen bg-[#06080F] font-sans text-gray-900 selection:bg-indigo-500/30 overflow-hidden relative">
+      {/* Dark Mode Ambient Background Glows */}
+      <div className="absolute top-[-50px] left-[-10%] w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute top-[350px] right-[-10%] w-[400px] h-[400px] bg-gray-900 rounded-full blur-[120px] pointer-events-none"></div>
+
+      <div className="pt-6 pb-12 px-5 md:pt-10 relative z-10">
         <div className="max-w-3xl mx-auto">
           <DashboardHeader
             user={user}
@@ -234,57 +286,65 @@ const Dashboard = () => {
             onNavigateProfile={() => navigate("/profile")}
           />
 
-          <section className="relative overflow-hidden text-white rounded-md p-6 shadow-2xl shadow-black/20 border border-gray-700/50">
-             <div className="relative z-10 flex flex-col justify-between h-full gap-5">
+          <section className="relative mt-2 rounded-[2rem] p-8 shadow-2xl overflow-hidden group border border-white/10 bg-white/[0.02] backdrop-blur-3xl">
+            {/* Animated inner gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-rose-500/5 opacity-50 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+            <div className="relative z-10 flex flex-col justify-between h-full gap-8">
               <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 text-gray-400">
-                  <FaWallet className="text-[10px]" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-indigo-300">
+                  <FaWallet className="text-[12px]" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">
                     {monthlyGoal > 0 ? "Free to Spend" : "Net Balance"}
                   </span>
                 </div>
                 <button
                   onClick={handleSetGoal}
-                  className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-white transition"
+                  className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-all backdrop-blur-md border border-white/5"
                 >
                   Edit Budget
                 </button>
               </div>
 
-              <div className="flex items-baseline justify-between">
-                <h1 className="text-4xl font-extrabold tracking-tight">
-                  Rs. {monthlyGoal > 0 ? remaining.toLocaleString() : stats.balance.toLocaleString()}
-                </h1>
-                {monthlyGoal > 0 && (
-                  <span className={`text-xs font-bold px-2 py-1 rounded-lg ${isOver ? "bg-rose-500/20 text-rose-300" : "bg-indigo-500/20 text-indigo-300"}`}>
-                    {pct}% Used
-                  </span>
-                )}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-baseline justify-between">
+                  <h1 className="text-5xl font-extrabold tracking-tight text-white drop-shadow-sm flex items-center">
+                    <span className="text-2xl text-indigo-400 font-medium mr-1.5 opacity-80">Rs.</span>
+                    {monthlyGoal > 0 ? remaining.toLocaleString() : stats.balance.toLocaleString()}
+                  </h1>
+                  {monthlyGoal > 0 && (
+                    <span className={`text-xs font-bold px-3 py-1.5 rounded-xl border ${isOver ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"} shadow-sm`}>
+                      {pct}% Used
+                    </span>
+                  )}
+                </div>
               </div>
 
-              <div>
+              <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-inner">
                 {monthlyGoal > 0 && (
-                  <div className="w-full bg-gray-900 h-1 rounded-full mb-4 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-1000 ${isOver ? "bg-rose-500" : "bg-indigo-500"}`} style={{ width: `${pct}%` }}></div>
+                  <div className="w-full bg-black/50 h-1.5 rounded-full mb-6 overflow-hidden shadow-inner relative">
+                    <div className={`absolute top-0 bottom-0 left-0 transition-all duration-1000 ease-out ${isOver ? "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]" : "bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"}`} style={{ width: `${pct}%` }}>
+                      <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                    </div>
                   </div>
                 )}
-                <div className="flex divide-x divide-gray-700/50">
-                  <div className="flex-1 flex items-center gap-3 pr-4">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                      <FaArrowDown size={8} />
+                <div className="flex divide-x divide-white/5">
+                  <div className="flex-1 flex items-center gap-2 md:gap-4 pr-2 md:pr-4 group/income overflow-hidden">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover/income:bg-emerald-500/20 group-hover/income:scale-110 transition-all shrink-0">
+                      <FaArrowDown size={12} />
                     </div>
-                    <div>
-                      <p className="text-[8px] text-gray-400 uppercase font-bold">Income</p>
-                      <p className="text-sm font-bold">Rs.{stats.income.toLocaleString()}</p>
+                    <div className="overflow-hidden">
+                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">Income</p>
+                      <p className="text-sm md:text-base font-bold text-gray-100 truncate">Rs.{stats.income.toLocaleString()}</p>
                     </div>
                   </div>
-                  <div className="flex-1 flex items-center gap-3 pl-4">
-                    <div className="w-6 h-6 rounded-full bg-rose-500/20 flex items-center justify-center text-rose-400">
-                      <FaArrowUp size={8} />
+                  <div className="flex-1 flex items-center gap-2 md:gap-4 pl-3 md:pl-4 group/expense overflow-hidden">
+                    <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-400 group-hover/expense:bg-rose-500/20 group-hover/expense:scale-110 transition-all shrink-0">
+                      <FaArrowUp size={12} />
                     </div>
-                    <div>
-                      <p className="text-[8px] text-gray-400 uppercase font-bold">Expense</p>
-                      <p className="text-sm font-bold">Rs.{stats.expense.toLocaleString()}</p>
+                    <div className="overflow-hidden">
+                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">Expense</p>
+                      <p className="text-sm md:text-base font-bold text-gray-100 truncate">Rs.{stats.expense.toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -294,12 +354,12 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="bg-[#F8FAFC] min-h-screen rounded-t-xl relative mt-4 px-5 pt-8 pb-24 shadow-[0_-10px_40px_rgba(0,0,0,0.2)]">
+      <div className="bg-[#FAFAFA] min-h-screen rounded-t-[0.2rem] relative mt-[-2rem] px-5 pt-8 pb-24 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] z-20">
         <div className="max-w-3xl mx-auto">
-          <div className="bg-gray-200/60 p-1 rounded-xl flex relative mb-6 h-10">
-            <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-lg shadow-sm transition-all duration-300 ${activeTab === "activity" ? "left-1" : "left-[calc(50%+4px)]"}`}></div>
-            <button onClick={() => setActiveTab("activity")} className={`flex-1 relative z-10 text-[10px] font-bold uppercase tracking-wider transition ${activeTab === "activity" ? "text-gray-900" : "text-gray-500"}`}>Activity</button>
-            <button onClick={() => setActiveTab("analytics")} className={`flex-1 relative z-10 text-[10px] font-bold uppercase tracking-wider transition ${activeTab === "analytics" ? "text-gray-900" : "text-gray-500"}`}>Analytics</button>
+          <div className="bg-gray-200/50 p-1.5 rounded-2xl flex relative mb-8 h-12">
+            <div className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${activeTab === "activity" ? "left-1.5" : "left-[calc(50%+4px)]"}`}></div>
+            <button onClick={() => setActiveTab("activity")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Activity</button>
+            <button onClick={() => setActiveTab("analytics")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Analytics</button>
           </div>
 
           <div className="animate-fade-in-up">
@@ -311,6 +371,7 @@ const Dashboard = () => {
                 setSelectedMonth={setSelectedMonth}
                 onEdit={(t) => { setTransactionToEdit(t); setIsModalOpen(true); }}
                 onDelete={initiateDelete}
+                onViewDetail={(t) => { setTransactionToView(t); setIsDetailModalOpen(true); }}
                 onLoadMore={handleLoadMore}
                 hasMore={hasMore}
                 isFetching={isFetchingTxns}
@@ -330,7 +391,7 @@ const Dashboard = () => {
       <div className="fixed bottom-6 right-6 z-40">
         <button
           onClick={() => { setTransactionToEdit(null); setIsModalOpen(true); }}
-          className="w-14 h-14 bg-gray-900 text-white rounded-full shadow-lg shadow-gray-900/30 flex items-center justify-center hover:scale-105 active:scale-95 transition"
+          className="w-14 h-14 bg-indigo-600 text-white rounded-2xl shadow-[0_10px_25px_rgba(79,70,229,0.4)] flex items-center justify-center hover:scale-105 hover:-translate-y-1 active:scale-95 transition-all duration-300"
         >
           <FaPlus size={18} />
         </button>
@@ -346,6 +407,11 @@ const Dashboard = () => {
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirm={confirmDelete}
+      />
+      <TransactionDetailModal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        transaction={transactionToView}
       />
     </div>
   );
