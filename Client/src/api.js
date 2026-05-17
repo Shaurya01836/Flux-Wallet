@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080',
+    baseURL: "https://flux-wallet-e4cu.onrender.com" || 'http://localhost:8080',
 });
 
 export default api;

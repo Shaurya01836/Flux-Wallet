@@ -139,6 +139,19 @@ const Dashboard = () => {
     }
   };
 
+  // --- Auto-fetch older transactions if needed for the selected month ---
+  useEffect(() => {
+    if (!isFetchingTxns && hasMore && transactions.length > 0) {
+      const oldestLoadedDate = transactions[transactions.length - 1].date;
+      const oldestLoadedMonth = oldestLoadedDate.slice(0, 7);
+      
+      // If we haven't fetched past the selected month yet, we might be missing its transactions
+      if (oldestLoadedMonth >= selectedMonth) {
+        loadTransactions(page + 1);
+      }
+    }
+  }, [transactions, selectedMonth, isFetchingTxns, hasMore, page, loadTransactions]);
+
   // --- Actions ---
   const handleSetGoal = async () => {
     const val = prompt("Monthly budget:", monthlyGoal || "");
@@ -212,10 +225,10 @@ const Dashboard = () => {
   if (isServerWaking || isLoading) {
     return (
       <div className="min-h-screen bg-[#06080F] font-sans overflow-hidden relative">
-        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none"></div>
-        <div className="absolute top-[20%] right-[-10%] w-[400px] h-[400px] bg-rose-600/5 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-[-5%] left-[-10%] w-[250px] md:w-[500px] h-[250px] md:h-[500px] bg-indigo-900/30 md:bg-indigo-900/20 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
+        <div className="absolute top-[20%] right-[-10%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-indigo-950/40 md:bg-gray-900/50 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
 
-        <div className="pt-6 pb-12 px-5 md:pt-10 relative z-10 max-w-3xl mx-auto">
+        <div className="pt-6 pb-12 px-5 md:pt-10 relative z-10 max-w-5xl mx-auto">
           {/* Header Skeleton */}
           <div className="flex justify-between items-center mb-8">
             <div>
@@ -249,7 +262,7 @@ const Dashboard = () => {
 
         {/* Bottom Section Skeleton */}
         <div className="bg-[#FAFAFA] min-h-screen rounded-t-[2.5rem] px-5 pt-8 relative z-20 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] mt-[-2rem]">
-           <div className="max-w-3xl mx-auto">
+           <div className="max-w-5xl mx-auto">
              <div className="h-12 w-full bg-gray-200/50 rounded-2xl animate-pulse mb-8"></div>
              
              <div className="space-y-4">
@@ -275,11 +288,11 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-[#06080F] font-sans text-gray-900 selection:bg-indigo-500/30 overflow-hidden relative">
       {/* Dark Mode Ambient Background Glows */}
-      <div className="absolute top-[-50px] left-[-10%] w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none"></div>
-      <div className="absolute top-[350px] right-[-10%] w-[400px] h-[400px] bg-gray-900 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute top-[-50px] left-[-10%] w-[250px] md:w-[500px] h-[250px] md:h-[500px] bg-indigo-900/30 md:bg-indigo-900/20 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
+      <div className="absolute top-[350px] right-[-10%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-indigo-950/40 md:bg-gray-900/50 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
 
       <div className="pt-6 pb-12 px-5 md:pt-10 relative z-10">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <DashboardHeader
             user={user}
             onLogout={() => { localStorage.clear(); navigate("/"); }}
@@ -355,7 +368,7 @@ const Dashboard = () => {
       </div>
 
       <div className="bg-[#FAFAFA] min-h-screen rounded-t-[0.2rem] relative mt-[-2rem] px-5 pt-8 pb-24 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] z-20">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <div className="bg-gray-200/50 p-1.5 rounded-2xl flex relative mb-8 h-12">
             <div className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${activeTab === "activity" ? "left-1.5" : "left-[calc(50%+4px)]"}`}></div>
             <button onClick={() => setActiveTab("activity")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Activity</button>

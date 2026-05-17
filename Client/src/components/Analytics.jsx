@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { FaArrowDown, FaChartPie, FaBolt, FaCalendarAlt, FaFire, FaTrophy } from "react-icons/fa";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const Analytics = ({
   transactions,
@@ -82,24 +83,7 @@ const Analytics = ({
     "#6B7280", // Gray (Others)
   ];
 
-  // --- 5. Dynamic Conic Gradient for Donut Chart ---
-  const gradientString = useMemo(() => {
-    if (categoryStats.total === 0) return "conic-gradient(#f3f4f6 0% 100%)";
-
-    let currentDeg = 0;
-    const stops = categoryStats.stats
-      .map((stat, index) => {
-        const color = COLORS[index % COLORS.length];
-        const deg = (stat.amount / categoryStats.total) * 360;
-        const start = currentDeg;
-        const end = currentDeg + deg;
-        currentDeg = end;
-        return `${color} ${start}deg ${end}deg`;
-      })
-      .join(", ");
-
-    return `conic-gradient(${stops})`;
-  }, [categoryStats]);
+  // Removed manual gradient generation (handled by Recharts now)
 
   return (
     <section className="pb-10 animate-fade-in space-y-8">
@@ -169,13 +153,10 @@ const Analytics = ({
           </div>
 
           <div className="flex flex-col md:flex-row gap-10 items-center md:items-start bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
-            {/* --- Left: The Donut Chart --- */}
-            <div className="relative w-48 h-48 md:w-56 md:h-56 flex-shrink-0">
-              <div
-                className="w-full h-full rounded-full shadow-lg shadow-gray-100/50 transform -rotate-90"
-                style={{ background: gradientString }}
-              ></div>
-              <div className="absolute inset-[20px] md:inset-[22px] bg-white rounded-full flex flex-col items-center justify-center shadow-inner">
+            {/* --- Left: The Donut Chart (Recharts) --- */}
+            <div className="relative w-48 h-48 md:w-56 md:h-56 flex-shrink-0 flex items-center justify-center">
+              {/* Render text underneath the SVG so tooltips display on top */}
+              <div className="absolute inset-[18%] md:inset-[20%] bg-white rounded-full flex flex-col items-center justify-center shadow-inner pointer-events-none">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
                   Total Spent
                 </span>
@@ -186,6 +167,27 @@ const Analytics = ({
                   {expenses.length} txns
                 </span>
               </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryStats.stats}
+                    innerRadius="75%"
+                    outerRadius="100%"
+                    paddingAngle={2}
+                    dataKey="amount"
+                    stroke="none"
+                  >
+                    {categoryStats.stats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value) => `Rs.${value}`}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontWeight: 'bold' }}
+                    itemStyle={{ color: '#111827' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
 
             {/* --- Right: Detailed List --- */}
@@ -225,32 +227,41 @@ const Analytics = ({
             </div>
           </div>
 
-          {/* Daily Trend Chart */}
+          {/* Daily Trend Chart (Recharts) */}
           <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm mt-4">
             <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-6">Daily Spending Trend</h4>
-            <div className="flex items-end gap-1 h-32 w-full">
-               {dailySpend.map((d, i) => {
-                 const heightPct = maxDailySpend > 0 ? (d.amount / maxDailySpend) * 100 : 0;
-                 return (
-                   <div key={i} className="flex-1 flex flex-col justify-end group relative h-full">
-                     {/* Tooltip */}
-                     {d.amount > 0 && (
-                       <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none whitespace-nowrap shadow-xl">
-                         Rs.{d.amount}
-                       </div>
-                     )}
-                     <div 
-                       className="w-full bg-indigo-100 group-hover:bg-indigo-500 rounded-t-sm transition-all duration-300 cursor-pointer"
-                       style={{ height: `${heightPct}%`, minHeight: d.amount > 0 ? '4px' : '0' }}
-                     ></div>
-                   </div>
-                 );
-               })}
-            </div>
-            <div className="flex justify-between mt-3 text-[10px] font-bold text-gray-400 uppercase">
-               <span>1st</span>
-               <span>15th</span>
-               <span>End</span>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailySpend} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                  <XAxis 
+                    dataKey="day" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 'bold' }}
+                    tickFormatter={(val) => {
+                      if (val === 1) return '1st';
+                      if (val === 15) return '15th';
+                      if (val === dailySpend.length) return 'End';
+                      return '';
+                    }}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 10, fill: '#9ca3af', fontWeight: 'bold' }}
+                    tickFormatter={(val) => val === 0 ? '' : `Rs.${val}`}
+                  />
+                  <Tooltip 
+                    cursor={{ fill: '#f3f4f6' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontWeight: 'bold' }}
+                    formatter={(value) => [`Rs.${value}`, 'Spent']}
+                    labelFormatter={(label) => `Day ${label}`}
+                    itemStyle={{ color: '#111827' }}
+                  />
+                  <Bar dataKey="amount" fill="#4F46E5" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         </>
