@@ -56,8 +56,8 @@ const Profile = () => {
         }
     };
 
-    const handleLogout = () => {
-        if (window.confirm("Log out of Flux?")) {
+    const handleLogout = async () => {
+        if (await window.confirm("Log out of Flux?")) {
             localStorage.removeItem('user_info');
             localStorage.removeItem('user_token');
             navigate('/');

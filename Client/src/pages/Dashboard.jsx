@@ -154,7 +154,7 @@ const Dashboard = () => {
 
   // --- Actions ---
   const handleSetGoal = async () => {
-    const val = prompt("Monthly budget:", monthlyGoal || "");
+    const val = await window.prompt("Monthly budget:", monthlyGoal || "");
     if (val && !isNaN(val)) {
       try {
         await api.post("/api/user/budget", {
@@ -295,7 +295,12 @@ const Dashboard = () => {
         <div className="max-w-5xl mx-auto">
           <DashboardHeader
             user={user}
-            onLogout={() => { localStorage.clear(); navigate("/"); }}
+            onLogout={async () => {
+              if (await window.confirm("Log out of Flux?")) {
+                localStorage.clear();
+                navigate("/");
+              }
+            }}
             onNavigateProfile={() => navigate("/profile")}
           />
 
