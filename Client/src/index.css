@@ -134,3 +134,19 @@ body {
 .animate-bounce-short {
   animation: bounceShort 0.5s ease-in-out 2;
 }
+
+/* Hide number input spin buttons globally for a premium clean UI */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+/* Hide placeholder text when focused to avoid caret overlapping placeholders */
+input:focus::placeholder {
+  color: transparent;
+}

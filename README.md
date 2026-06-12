@@ -46,6 +46,7 @@ Built with a robust **React 19 + Vite** frontend and a powerful **Java 21 + Spri
 | 🛡️ **Secure & Private** | Built with privacy in mind. Utilizes seamless **Google OAuth** integration for secure, password-less logins. |
 | 💸 **Beautiful UI/UX** | Enjoy a brutalist-inspired, premium glassmorphism interface that is fully responsive and optimized for both desktop and mobile. |
 | 📈 **Financial Insights** | View transaction history, filter by categories, and monitor your monthly financial growth instantly. |
+| ⏰ **Autopilot Subscriptions** | Track repeating expenses (Netflix, Rent, etc.) and let the system auto-generate transaction logs, calculate normalized monthly cost projections, and warn you of upcoming due dates. |
 
 ---
 
@@ -159,6 +160,11 @@ npm run dev
 | `/api/payments` | `GET` | Get all transactions for a user |
 | `/api/payments` | `POST` | Create a new transaction |
 | `/api/payments/{id}` | `DELETE` | Delete a specific transaction |
+| `/api/subscriptions` | `POST` | Create a new subscription tracker |
+| `/api/subscriptions/{id}` | `PUT` | Update/Pause/Resume subscription settings |
+| `/api/subscriptions/{id}` | `DELETE` | Delete a subscription tracker |
+| `/api/subscriptions/user/{userId}` | `GET` | Get all subscription trackers for a user |
+| `/api/subscriptions/process-due` | `POST` | Manually run due-renewals check |
 
 *(Endpoints are subject to change based on active development)*
 
