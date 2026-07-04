@@ -4,11 +4,8 @@ import { useGoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import { FaArrowRight, FaShieldAlt, FaChartPie, FaBolt, FaWallet, FaCheckCircle, FaGoogle } from 'react-icons/fa';
 import api from '../api';
-import DatabaseAlertBanner from '../components/DatabaseAlertBanner';
-
 const LandingPage = () => {
   const navigate = useNavigate();
-  const [hasDbError, setHasDbError] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem('user_token');
@@ -55,8 +52,6 @@ const LandingPage = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-indigo-100 selection:text-indigo-900 overflow-x-hidden">
-      {hasDbError && <DatabaseAlertBanner />}
-      
       {/* --- Navbar --- */}
       <nav className="max-w-7xl mx-auto px-6 py-6 flex justify-between items-center">
         <div className="flex items-center gap-2 text-indigo-600 font-extrabold text-2xl tracking-tight">

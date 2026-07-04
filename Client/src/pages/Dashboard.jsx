@@ -9,11 +9,9 @@ import Analytics from "../components/Analytics";
 import DeleteTransactionModal from "../components/DeleteTransactionModal";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import Subscriptions from "../components/Subscriptions";
-import DatabaseAlertBanner from "../components/DatabaseAlertBanner";
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [hasDbError, setHasDbError] = useState(true);
 
   // --- State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -60,7 +58,6 @@ const Dashboard = () => {
         await api.get("/health-check");
       } catch (error) {
         console.error("Database health check failed", error);
-        setHasDbError(true);
       } finally {
         setIsServerWaking(false);
         setIsLoading(false);
@@ -291,7 +288,6 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-[#06080F] font-sans text-gray-900 selection:bg-indigo-500/30 overflow-hidden relative">
-      {hasDbError && <DatabaseAlertBanner />}
       {/* Dark Mode Ambient Background Glows */}
       <div className="absolute top-[-50px] left-[-10%] w-[250px] md:w-[500px] h-[250px] md:h-[500px] bg-indigo-900/30 md:bg-indigo-900/20 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
       <div className="absolute top-[350px] right-[-10%] w-[200px] md:w-[400px] h-[200px] md:h-[400px] bg-indigo-950/40 md:bg-gray-900/50 rounded-full blur-[80px] md:blur-[120px] pointer-events-none"></div>
