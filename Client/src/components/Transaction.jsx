@@ -41,23 +41,22 @@ const Transaction = ({
   const observerTarget = useRef(null);
 
   useEffect(() => {
+    const target = observerTarget.current;
+    if (!target) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !isFetching) {
           onLoadMore();
         }
       },
-      { threshold: 1.0 }
+      { rootMargin: "150px", threshold: 0.1 }
     );
 
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
+    observer.observe(target);
 
     return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
+      observer.disconnect();
     };
   }, [hasMore, isFetching, onLoadMore]);
 
@@ -164,13 +163,13 @@ const Transaction = ({
 
         {/* Loading / Sentinel Element */}
         {hasMore && (
-          <div ref={observerTarget} className="py-8 flex justify-center w-full">
+          <div ref={observerTarget} className="py-6 flex justify-center w-full min-h-[56px] items-center">
             {isFetching ? (
-              <div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase tracking-widest">
+              <div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase tracking-widest transition-opacity duration-200">
                 <FaSpinner className="animate-spin text-indigo-500" /> Loading more...
               </div>
             ) : (
-              <div className="h-4 w-full" /> // Invisible target
+              <div className="h-6 w-full" />
             )}
           </div>
         )}

@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { FaSignOutAlt, FaUserFriends } from "react-icons/fa";
+import { FaSignOutAlt } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 
-const DashboardHeader = ({ user, onLogout, onNavigateProfile, onSelectTab }) => {
+const DashboardHeader = ({ user, onLogout, onNavigateProfile }) => {
   const [imgError, setImgError] = useState(false);
   const navigate = useNavigate();
 
@@ -18,17 +18,6 @@ const DashboardHeader = ({ user, onLogout, onNavigateProfile, onSelectTab }) => 
       </div>
 
       <div className="flex items-center gap-3 sm:gap-5 bg-white/5 backdrop-blur-xl border border-white/10 px-3 py-2 rounded-[1.5rem] shadow-xl">
-        <button
-          onClick={() => {
-            if (onSelectTab) onSelectTab("split");
-            else navigate("/dashboard");
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:text-white bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 rounded-xl transition-all"
-          title="Split Expenses"
-        >
-          <FaUserFriends size={14} />
-          <span className="hidden sm:inline">Split</span>
-        </button>
         <button
           onClick={onLogout}
           className="p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"

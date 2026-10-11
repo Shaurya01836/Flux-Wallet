@@ -71,7 +71,23 @@ public class SplitExpenseController {
     public ResponseEntity<UserDTO> addFriend(
             @RequestParam Long currentUserId,
             @RequestParam String name,
-            @RequestParam String email) {
+            @RequestParam(required = false) String email) {
         return ResponseEntity.ok(splitExpenseService.addFriendByContact(currentUserId, name, email));
+    }
+
+    @PutMapping("/link-email")
+    public ResponseEntity<UserDTO> linkFriendEmail(
+            @RequestParam Long currentUserId,
+            @RequestParam Long friendId,
+            @RequestParam String email) {
+        return ResponseEntity.ok(splitExpenseService.linkFriendEmail(currentUserId, friendId, email));
+    }
+
+    @DeleteMapping("/friend")
+    public ResponseEntity<Void> deleteFriend(
+            @RequestParam Long currentUserId,
+            @RequestParam Long friendId) {
+        splitExpenseService.deleteFriend(currentUserId, friendId);
+        return ResponseEntity.ok().build();
     }
 }

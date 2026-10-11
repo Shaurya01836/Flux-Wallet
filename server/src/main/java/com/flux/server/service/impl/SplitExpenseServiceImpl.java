@@ -157,34 +157,43 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
     @Override
     @Transactional
     public UserDTO addFriendByContact(Long currentUserId, String name, String email) {
-        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
-            throw new IllegalArgumentException("A valid email address is required to add a friend");
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Friend's name is required");
         }
-        String cleanEmail = email.trim().toLowerCase();
+        String cleanName = name.trim();
 
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new RuntimeException("Current user not found"));
 
-        if (currentUser.getEmail().equalsIgnoreCase(cleanEmail)) {
-            throw new IllegalArgumentException("You cannot add yourself as a friend");
-        }
-
-        // Check if user already exists with this exact email
-        Optional<User> existing = userRepository.findByEmail(cleanEmail);
-
         User friendUser;
-        if (existing.isPresent()) {
-            friendUser = existing.get();
+
+        if (email != null && !email.trim().isEmpty() && email.contains("@")) {
+            String cleanEmail = email.trim().toLowerCase();
+            if (currentUser.getEmail() != null && currentUser.getEmail().equalsIgnoreCase(cleanEmail)) {
+                throw new IllegalArgumentException("You cannot add yourself as a friend");
+            }
+
+            Optional<User> existing = userRepository.findByEmail(cleanEmail);
+            if (existing.isPresent()) {
+                friendUser = existing.get();
+            } else {
+                friendUser = new User();
+                friendUser.setName(cleanName);
+                friendUser.setEmail(cleanEmail);
+                friendUser.setCreatedAt(LocalDateTime.now());
+                friendUser = userRepository.save(friendUser);
+            }
         } else {
-            // Create pending placeholder user with their actual email
+            // No email provided: create an offline dummy friend placeholder
+            String dummyEmail = "offline_" + UUID.randomUUID().toString().substring(0, 8) + "@offline.flux";
             friendUser = new User();
-            friendUser.setName(name != null && !name.trim().isEmpty() ? name.trim() : "Friend");
-            friendUser.setEmail(cleanEmail);
+            friendUser.setName(cleanName);
+            friendUser.setEmail(dummyEmail);
             friendUser.setCreatedAt(LocalDateTime.now());
             friendUser = userRepository.save(friendUser);
         }
 
-        // Add Friendship for current user
+        // Add Friendship for current user if not already present
         if (!friendshipRepository.findByUserAndFriend(currentUser.getId(), friendUser.getId()).isPresent()) {
             com.flux.server.entity.Friendship f = new com.flux.server.entity.Friendship();
             f.setUser(currentUser);
@@ -193,6 +202,77 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
         }
 
         return modelMapper.map(friendUser, UserDTO.class);
+    }
+
+    @Override
+    @Transactional
+    public UserDTO linkFriendEmail(Long currentUserId, Long friendId, String newEmail) {
+        if (newEmail == null || newEmail.trim().isEmpty() || !newEmail.contains("@")) {
+            throw new IllegalArgumentException("A valid email address is required");
+        }
+        String cleanEmail = newEmail.trim().toLowerCase();
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+        if (currentUser.getEmail() != null && currentUser.getEmail().equalsIgnoreCase(cleanEmail)) {
+            throw new IllegalArgumentException("You cannot link your own email to a friend");
+        }
+
+        User friendUser = userRepository.findById(friendId)
+                .orElseThrow(() -> new RuntimeException("Friend record not found"));
+
+        Optional<User> existingUserWithEmail = userRepository.findByEmail(cleanEmail);
+
+        if (existingUserWithEmail.isPresent()) {
+            User targetUser = existingUserWithEmail.get();
+
+            if (targetUser.getId().equals(friendId)) {
+                return modelMapper.map(targetUser, UserDTO.class);
+            }
+
+            // Merge friendUser (dummy/placeholder) into targetUser
+            // 1. Reassign all SplitExpenses where friendUser was paidBy
+            List<SplitExpense> expensesPaidByFriend = splitExpenseRepository.findAll()
+                    .stream()
+                    .filter(e -> e.getPaidBy().getId().equals(friendId))
+                    .collect(Collectors.toList());
+            for (SplitExpense exp : expensesPaidByFriend) {
+                exp.setPaidBy(targetUser);
+                splitExpenseRepository.save(exp);
+            }
+
+            // 2. Reassign all SplitExpenses where friendUser was owedBy
+            List<SplitExpense> expensesOwedByFriend = splitExpenseRepository.findAll()
+                    .stream()
+                    .filter(e -> e.getOwedBy().getId().equals(friendId))
+                    .collect(Collectors.toList());
+            for (SplitExpense exp : expensesOwedByFriend) {
+                exp.setOwedBy(targetUser);
+                splitExpenseRepository.save(exp);
+            }
+
+            // 3. Re-link friendships
+            ensureFriendship(currentUser, targetUser);
+
+            // Clean up old dummy friendship
+            friendshipRepository.findByUserAndFriend(currentUserId, friendId)
+                    .ifPresent(friendshipRepository::delete);
+            friendshipRepository.findByUserAndFriend(friendId, currentUserId)
+                    .ifPresent(friendshipRepository::delete);
+
+            // If friendUser was an unboarded dummy/offline user, delete it
+            if (friendUser.getLastLoginAt() == null && (friendUser.getEmail() == null || friendUser.getEmail().endsWith("@offline.flux"))) {
+                userRepository.delete(friendUser);
+            }
+
+            return modelMapper.map(targetUser, UserDTO.class);
+        } else {
+            // No user has this email yet - simply update the friend's email
+            friendUser.setEmail(cleanEmail);
+            User saved = userRepository.save(friendUser);
+            return modelMapper.map(saved, UserDTO.class);
+        }
     }
 
     @Override
@@ -229,6 +309,20 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
             throw new RuntimeException("Unauthorized to delete this expense");
         }
         splitExpenseRepository.delete(exp);
+    }
+
+    @Override
+    @Transactional
+    public void deleteFriend(Long currentUserId, Long friendId) {
+        // Remove friendship records in both directions if any
+        friendshipRepository.findByUserAndFriend(currentUserId, friendId)
+                .ifPresent(friendshipRepository::delete);
+        friendshipRepository.findByUserAndFriend(friendId, currentUserId)
+                .ifPresent(friendshipRepository::delete);
+
+        // Also clean up any settled or unsettled split expenses between them
+        List<SplitExpense> expenses = splitExpenseRepository.findExpensesBetweenUsers(currentUserId, friendId);
+        splitExpenseRepository.deleteAll(expenses);
     }
 
     @Override

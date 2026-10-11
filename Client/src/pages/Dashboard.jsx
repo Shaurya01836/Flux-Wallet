@@ -105,54 +105,42 @@ const Dashboard = () => {
     }
   };
 
-  // --- INFINITE SCROLL LOADER (FIXED) ---
+  // Guard against concurrent fetching
+  const isFetchingRef = React.useRef(false);
+
+  // --- INFINITE SCROLL LOADER ---
   const loadTransactions = useCallback(async (pageNum, shouldReset = false) => {
-    if (!user) return;
+    if (!user || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     setIsFetchingTxns(true);
 
     try {
-      const pageSize = 10;
+      const pageSize = 15;
       const res = await api.get(`/api/payments/user/${user.id}?page=${pageNum}&size=${pageSize}`);
-      const newData = res.data;
+      const newData = res.data || [];
 
       setTransactions(prev => {
         if (shouldReset) return newData;
-
-        // --- FIX: Filter out duplicates based on ID ---
         const existingIds = new Set(prev.map(t => t.id));
         const uniqueNewData = newData.filter(t => !existingIds.has(t.id));
-
         return [...prev, ...uniqueNewData];
       });
 
-      // If we got fewer items than requested, we reached the end
       setHasMore(newData.length === pageSize);
       setPage(pageNum);
     } catch (error) {
       console.error("Failed to load transactions", error);
     } finally {
+      isFetchingRef.current = false;
       setIsFetchingTxns(false);
     }
   }, [user]);
 
-  const handleLoadMore = () => {
-    if (!isFetchingTxns && hasMore) {
+  const handleLoadMore = useCallback(() => {
+    if (!isFetchingRef.current && hasMore) {
       loadTransactions(page + 1);
     }
-  };
-
-  // --- Auto-fetch older transactions if needed for the selected month ---
-  useEffect(() => {
-    if (!isFetchingTxns && hasMore && transactions.length > 0) {
-      const oldestLoadedDate = transactions[transactions.length - 1].date;
-      const oldestLoadedMonth = oldestLoadedDate.slice(0, 7);
-      
-      // If we haven't fetched past the selected month yet, we might be missing its transactions
-      if (oldestLoadedMonth >= selectedMonth) {
-        loadTransactions(page + 1);
-      }
-    }
-  }, [transactions, selectedMonth, isFetchingTxns, hasMore, page, loadTransactions]);
+  }, [hasMore, page, loadTransactions]);
 
   // --- Actions ---
   const handleSetGoal = async () => {
@@ -377,21 +365,21 @@ const Dashboard = () => {
 
       <div className="bg-[#FAFAFA] min-h-screen rounded-t-[0.2rem] relative mt-[-2rem] px-5 pt-8 pb-24 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] z-20">
         <div className="max-w-5xl mx-auto">
-          <div className="bg-gray-200/50 p-1.5 rounded-2xl flex relative mb-8 h-12">
+          <div className="bg-gray-200/50 p-1 rounded-2xl flex relative mb-6 sm:mb-8 h-11 sm:h-12 overflow-hidden">
             <div
-              className={`absolute top-1.5 bottom-1.5 w-[calc(25%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${
+              className={`absolute top-1 bottom-1 w-[calc(25%-4px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${
                 activeTab === "activity"
-                  ? "left-1.5"
+                  ? "left-1"
                   : activeTab === "analytics"
-                  ? "left-[calc(25%+2px)]"
+                  ? "left-[calc(25%+1px)]"
                   : activeTab === "subscriptions"
-                  ? "left-[calc(50%+2px)]"
-                  : "left-[calc(75%+2px)]"
+                  ? "left-[calc(50%+1px)]"
+                  : "left-[calc(75%+1px)]"
               }`}
             ></div>
             <button
               onClick={() => setActiveTab("activity")}
-              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
                 activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
@@ -399,7 +387,7 @@ const Dashboard = () => {
             </button>
             <button
               onClick={() => setActiveTab("analytics")}
-              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
                 activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
@@ -407,15 +395,16 @@ const Dashboard = () => {
             </button>
             <button
               onClick={() => setActiveTab("subscriptions")}
-              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
                 activeTab === "subscriptions" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
-              Subscriptions
+              <span className="sm:hidden">Subs</span>
+              <span className="hidden sm:inline">Subscriptions</span>
             </button>
             <button
               onClick={() => setActiveTab("split")}
-              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
                 activeTab === "split" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >

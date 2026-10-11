@@ -24,4 +24,8 @@ public interface SplitExpenseService {
     List<UserDTO> searchUsers(String query, Long currentUserId);
 
     UserDTO addFriendByContact(Long currentUserId, String name, String email);
+
+    UserDTO linkFriendEmail(Long currentUserId, Long friendId, String newEmail);
+
+    void deleteFriend(Long currentUserId, Long friendId);
 }

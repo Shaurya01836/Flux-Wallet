@@ -20,17 +20,18 @@ const AddFriendModal = ({ isOpen, onClose, onFriendAdded, currentUser }) => {
       return;
     }
 
-    if (!email.trim() || !email.includes("@")) {
+    if (email.trim() && !email.includes("@")) {
       setErrorMsg("Please enter a valid email address (e.g. friend@gmail.com).");
       return;
     }
 
     setIsSubmitting(true);
     try {
+      const emailParam = email.trim() ? `&email=${encodeURIComponent(email.trim().toLowerCase())}` : "";
       const res = await api.post(
         `/api/split/add-friend?currentUserId=${currentUser.id}&name=${encodeURIComponent(
           name.trim()
-        )}&email=${encodeURIComponent(email.trim().toLowerCase())}`
+        )}${emailParam}`
       );
 
       onFriendAdded(res.data);
@@ -38,7 +39,7 @@ const AddFriendModal = ({ isOpen, onClose, onFriendAdded, currentUser }) => {
     } catch (err) {
       console.error("Failed to add friend", err);
       setErrorMsg(
-        err.response?.data?.message || "Failed to add friend. Check the email and try again."
+        err.response?.data?.message || "Failed to add friend. Try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -63,7 +64,7 @@ const AddFriendModal = ({ isOpen, onClose, onFriendAdded, currentUser }) => {
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Add a Friend</h2>
-              <p className="text-xs text-gray-400">Add by email to split expenses</p>
+              <p className="text-xs text-gray-400">Split and track expenses right away</p>
             </div>
           </div>
           <button
@@ -83,34 +84,38 @@ const AddFriendModal = ({ isOpen, onClose, onFriendAdded, currentUser }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
-              Friend's Full Name
+              Friend's Full Name <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. John Doe, Sarah, Rahul"
+              placeholder="e.g. Rahul, John Doe, Aman"
               required
               className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
             />
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
-              Friend's Email Address
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Email Address
+              </label>
+              <span className="text-[10px] text-gray-400 font-semibold lowercase italic">
+                (optional — can link later)
+              </span>
+            </div>
             <div className="relative">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. friend@gmail.com"
-                required
                 className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
               />
             </div>
             <p className="text-[10px] text-gray-400 mt-1.5 leading-relaxed">
-              💡 When your friend signs in with Google using this email, all split expenses and balances will automatically sync to their account!
+              💡 Don't know their email yet? Leave it blank! You can record splits now, and link their email later to automatically sync all records when they join.
             </p>
           </div>
 
@@ -118,7 +123,7 @@ const AddFriendModal = ({ isOpen, onClose, onFriendAdded, currentUser }) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
+              className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2 text-xs uppercase tracking-wider cursor-pointer"
             >
               {isSubmitting ? (
                 <>
