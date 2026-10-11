@@ -22,6 +22,14 @@ public class SplitExpenseController {
         return ResponseEntity.ok(splitExpenseService.addExpense(dto));
     }
 
+    @PutMapping("/expense/{expenseId}")
+    public ResponseEntity<SplitExpenseDTO> updateExpense(
+            @PathVariable Long expenseId,
+            @RequestBody SplitExpenseDTO dto,
+            @RequestParam Long currentUserId) {
+        return ResponseEntity.ok(splitExpenseService.updateExpense(expenseId, dto, currentUserId));
+    }
+
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<SplitExpenseDTO>> getAllExpenses(@PathVariable Long userId) {
         return ResponseEntity.ok(splitExpenseService.getAllExpenses(userId));
@@ -40,8 +48,17 @@ public class SplitExpenseController {
     }
 
     @PutMapping("/settle/{expenseId}")
-    public ResponseEntity<SplitExpenseDTO> settleExpense(@PathVariable Long expenseId) {
-        return ResponseEntity.ok(splitExpenseService.settleExpense(expenseId));
+    public ResponseEntity<SplitExpenseDTO> settleExpense(
+            @PathVariable Long expenseId,
+            @RequestParam Long currentUserId) {
+        return ResponseEntity.ok(splitExpenseService.settleExpense(expenseId, currentUserId));
+    }
+
+    @PutMapping("/settle/{expenseId}/reject")
+    public ResponseEntity<SplitExpenseDTO> rejectSettleExpense(
+            @PathVariable Long expenseId,
+            @RequestParam Long currentUserId) {
+        return ResponseEntity.ok(splitExpenseService.rejectSettleExpense(expenseId, currentUserId));
     }
 
     @PostMapping("/settle-friend")
@@ -58,6 +75,13 @@ public class SplitExpenseController {
             @RequestParam Long currentUserId) {
         splitExpenseService.deleteExpense(expenseId, currentUserId);
         return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/expense/{expenseId}/reject-delete")
+    public ResponseEntity<SplitExpenseDTO> rejectDeleteExpense(
+            @PathVariable Long expenseId,
+            @RequestParam Long currentUserId) {
+        return ResponseEntity.ok(splitExpenseService.rejectDeleteExpense(expenseId, currentUserId));
     }
 
     @GetMapping("/search-users")

@@ -40,6 +40,28 @@ public class SplitExpense {
 
     private LocalDateTime settledAt;
 
-    @CreationTimestamp
+    // Settlement approval workflow
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "settle_requested_by_user_id")
+    private User settlementRequestedBy;
+
+    private LocalDateTime settlementRequestedAt;
+
+    // Delete approval workflow
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "delete_requested_by_user_id")
+    private User deleteRequestedBy;
+
+    private LocalDateTime deleteRequestedAt;
+
+    // Date of expense (defaults to now if not provided, customizable on edit)
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+    }
 }

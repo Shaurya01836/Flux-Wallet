@@ -46,6 +46,9 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
         expense.setPaidBy(paidBy);
         expense.setOwedBy(owedBy);
         expense.setIsSettled(false);
+        if (dto.getCreatedAt() != null) {
+            expense.setCreatedAt(dto.getCreatedAt());
+        }
 
         SplitExpense saved = splitExpenseRepository.save(expense);
 
@@ -53,6 +56,59 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
         ensureFriendship(paidBy, owedBy);
         ensureFriendship(owedBy, paidBy);
 
+        return mapToDTO(saved);
+    }
+
+    @Override
+    @Transactional
+    public SplitExpenseDTO updateExpense(Long expenseId, SplitExpenseDTO dto, Long currentUserId) {
+        SplitExpense expense = splitExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new RuntimeException("Expense not found"));
+
+        if (!expense.getPaidBy().getId().equals(currentUserId) && !expense.getOwedBy().getId().equals(currentUserId)) {
+            throw new RuntimeException("Unauthorized: you are not part of this split expense");
+        }
+
+        if (Boolean.TRUE.equals(expense.getIsSettled())) {
+            throw new RuntimeException("Cannot edit an already settled expense");
+        }
+
+        if (dto.getPaidById() != null && dto.getOwedById() != null) {
+            if (dto.getPaidById().equals(dto.getOwedById())) {
+                throw new IllegalArgumentException("Cannot split expense with yourself");
+            }
+            User paidBy = userRepository.findById(dto.getPaidById())
+                    .orElseThrow(() -> new RuntimeException("Payer user not found"));
+            User owedBy = userRepository.findById(dto.getOwedById())
+                    .orElseThrow(() -> new RuntimeException("Owed user not found"));
+            expense.setPaidBy(paidBy);
+            expense.setOwedBy(owedBy);
+            ensureFriendship(paidBy, owedBy);
+            ensureFriendship(owedBy, paidBy);
+        }
+
+        if (dto.getTitle() != null && !dto.getTitle().trim().isEmpty()) {
+            expense.setTitle(dto.getTitle().trim());
+        }
+        if (dto.getAmount() != null && dto.getAmount() > 0) {
+            expense.setAmount(dto.getAmount());
+        }
+        if (dto.getCategory() != null) {
+            expense.setCategory(dto.getCategory());
+        }
+        expense.setNotes(dto.getNotes() != null ? dto.getNotes().trim() : null);
+
+        if (dto.getCreatedAt() != null) {
+            expense.setCreatedAt(dto.getCreatedAt());
+        }
+
+        // Reset any pending settlement/deletion requests after an edit
+        expense.setSettlementRequestedBy(null);
+        expense.setSettlementRequestedAt(null);
+        expense.setDeleteRequestedBy(null);
+        expense.setDeleteRequestedAt(null);
+
+        SplitExpense saved = splitExpenseRepository.save(expense);
         return mapToDTO(saved);
     }
 
@@ -277,11 +333,55 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
 
     @Override
     @Transactional
-    public SplitExpenseDTO settleExpense(Long expenseId) {
+    public SplitExpenseDTO settleExpense(Long expenseId, Long currentUserId) {
         SplitExpense exp = splitExpenseRepository.findById(expenseId)
                 .orElseThrow(() -> new RuntimeException("Expense not found"));
-        exp.setIsSettled(true);
-        exp.setSettledAt(LocalDateTime.now());
+
+        if (Boolean.TRUE.equals(exp.getIsSettled())) {
+            return mapToDTO(exp);
+        }
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+        boolean isPaidBy = exp.getPaidBy().getId().equals(currentUserId);
+        boolean isOwedBy = exp.getOwedBy().getId().equals(currentUserId);
+
+        if (!isPaidBy && !isOwedBy) {
+            throw new RuntimeException("Unauthorized: you are not part of this split expense");
+        }
+
+        User otherUser = isPaidBy ? exp.getOwedBy() : exp.getPaidBy();
+        boolean otherIsOffline = otherUser.getLastLoginAt() == null || 
+                (otherUser.getEmail() != null && otherUser.getEmail().endsWith("@offline.flux"));
+
+        // Rule:
+        // 1. If current user is owed the money (paidBy), they can instantly settle,
+        //    OR if the other user is offline/dummy (cannot log in to approve), settle immediately.
+        // 2. If other user already requested settlement, current user confirms it -> settled!
+        if (isPaidBy || otherIsOffline || 
+            (exp.getSettlementRequestedBy() != null && !exp.getSettlementRequestedBy().getId().equals(currentUserId))) {
+            exp.setIsSettled(true);
+            exp.setSettledAt(LocalDateTime.now());
+            exp.setSettlementRequestedBy(null);
+            exp.setSettlementRequestedAt(null);
+        } else {
+            // Current user is the debtor (owedBy) -> mark settlement requested so creditor must approve
+            exp.setSettlementRequestedBy(currentUser);
+            exp.setSettlementRequestedAt(LocalDateTime.now());
+        }
+
+        SplitExpense saved = splitExpenseRepository.save(exp);
+        return mapToDTO(saved);
+    }
+
+    @Override
+    @Transactional
+    public SplitExpenseDTO rejectSettleExpense(Long expenseId, Long currentUserId) {
+        SplitExpense exp = splitExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new RuntimeException("Expense not found"));
+        exp.setSettlementRequestedBy(null);
+        exp.setSettlementRequestedAt(null);
         SplitExpense saved = splitExpenseRepository.save(exp);
         return mapToDTO(saved);
     }
@@ -290,11 +390,28 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
     @Transactional
     public void settleAllWithFriend(Long currentUserId, Long friendId) {
         List<SplitExpense> expenses = splitExpenseRepository.findExpensesBetweenUsers(currentUserId, friendId);
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new RuntimeException("Current user not found"));
+        User friend = userRepository.findById(friendId)
+                .orElseThrow(() -> new RuntimeException("Friend not found"));
+
+        boolean friendIsOffline = friend.getLastLoginAt() == null || 
+                (friend.getEmail() != null && friend.getEmail().endsWith("@offline.flux"));
+
         LocalDateTime now = LocalDateTime.now();
         for (SplitExpense exp : expenses) {
             if (!Boolean.TRUE.equals(exp.getIsSettled())) {
-                exp.setIsSettled(true);
-                exp.setSettledAt(now);
+                boolean isPaidBy = exp.getPaidBy().getId().equals(currentUserId);
+                if (isPaidBy || friendIsOffline || 
+                    (exp.getSettlementRequestedBy() != null && !exp.getSettlementRequestedBy().getId().equals(currentUserId))) {
+                    exp.setIsSettled(true);
+                    exp.setSettledAt(now);
+                    exp.setSettlementRequestedBy(null);
+                    exp.setSettlementRequestedAt(null);
+                } else {
+                    exp.setSettlementRequestedBy(currentUser);
+                    exp.setSettlementRequestedAt(now);
+                }
                 splitExpenseRepository.save(exp);
             }
         }
@@ -305,10 +422,41 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
     public void deleteExpense(Long expenseId, Long currentUserId) {
         SplitExpense exp = splitExpenseRepository.findById(expenseId)
                 .orElseThrow(() -> new RuntimeException("Expense not found"));
-        if (!exp.getPaidBy().getId().equals(currentUserId) && !exp.getOwedBy().getId().equals(currentUserId)) {
+
+        boolean isPaidBy = exp.getPaidBy().getId().equals(currentUserId);
+        boolean isOwedBy = exp.getOwedBy().getId().equals(currentUserId);
+
+        if (!isPaidBy && !isOwedBy) {
             throw new RuntimeException("Unauthorized to delete this expense");
         }
-        splitExpenseRepository.delete(exp);
+
+        User otherUser = isPaidBy ? exp.getOwedBy() : exp.getPaidBy();
+        boolean otherIsOffline = otherUser.getLastLoginAt() == null || 
+                (otherUser.getEmail() != null && otherUser.getEmail().endsWith("@offline.flux"));
+
+        // If other user is offline, OR expense already settled, OR other user already requested deletion -> delete immediately
+        if (Boolean.TRUE.equals(exp.getIsSettled()) || otherIsOffline || 
+            (exp.getDeleteRequestedBy() != null && !exp.getDeleteRequestedBy().getId().equals(currentUserId))) {
+            splitExpenseRepository.delete(exp);
+        } else {
+            // Payer or debtor requests delete -> notify/require approval from other party
+            User currentUser = userRepository.findById(currentUserId)
+                    .orElseThrow(() -> new RuntimeException("Current user not found"));
+            exp.setDeleteRequestedBy(currentUser);
+            exp.setDeleteRequestedAt(LocalDateTime.now());
+            splitExpenseRepository.save(exp);
+        }
+    }
+
+    @Override
+    @Transactional
+    public SplitExpenseDTO rejectDeleteExpense(Long expenseId, Long currentUserId) {
+        SplitExpense exp = splitExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new RuntimeException("Expense not found"));
+        exp.setDeleteRequestedBy(null);
+        exp.setDeleteRequestedAt(null);
+        SplitExpense saved = splitExpenseRepository.save(exp);
+        return mapToDTO(saved);
     }
 
     @Override
@@ -320,9 +468,7 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
         friendshipRepository.findByUserAndFriend(friendId, currentUserId)
                 .ifPresent(friendshipRepository::delete);
 
-        // Also clean up any settled or unsettled split expenses between them
-        List<SplitExpense> expenses = splitExpenseRepository.findExpensesBetweenUsers(currentUserId, friendId);
-        splitExpenseRepository.deleteAll(expenses);
+        // Retain split expenses in DB so transaction history, audits, and settlement records are never lost
     }
 
     @Override
@@ -351,6 +497,18 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
         dto.setIsSettled(entity.getIsSettled());
         dto.setSettledAt(entity.getSettledAt());
         dto.setCreatedAt(entity.getCreatedAt());
+
+        if (entity.getSettlementRequestedBy() != null) {
+            dto.setSettleRequestedById(entity.getSettlementRequestedBy().getId());
+            dto.setSettleRequestedByName(entity.getSettlementRequestedBy().getName());
+            dto.setSettlementRequestedAt(entity.getSettlementRequestedAt());
+        }
+
+        if (entity.getDeleteRequestedBy() != null) {
+            dto.setDeleteRequestedById(entity.getDeleteRequestedBy().getId());
+            dto.setDeleteRequestedByName(entity.getDeleteRequestedBy().getName());
+            dto.setDeleteRequestedAt(entity.getDeleteRequestedAt());
+        }
 
         if (entity.getPaidBy() != null) {
             dto.setPaidById(entity.getPaidBy().getId());

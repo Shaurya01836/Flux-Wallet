@@ -8,6 +8,8 @@ import java.util.List;
 
 public interface SplitExpenseService {
     SplitExpenseDTO addExpense(SplitExpenseDTO dto);
+
+    SplitExpenseDTO updateExpense(Long expenseId, SplitExpenseDTO dto, Long currentUserId);
     
     List<SplitExpenseDTO> getAllExpenses(Long userId);
 
@@ -15,11 +17,15 @@ public interface SplitExpenseService {
 
     SplitBalanceDTO getBalances(Long userId);
 
-    SplitExpenseDTO settleExpense(Long expenseId);
+    SplitExpenseDTO settleExpense(Long expenseId, Long currentUserId);
+
+    SplitExpenseDTO rejectSettleExpense(Long expenseId, Long currentUserId);
 
     void settleAllWithFriend(Long currentUserId, Long friendId);
 
     void deleteExpense(Long expenseId, Long currentUserId);
+
+    SplitExpenseDTO rejectDeleteExpense(Long expenseId, Long currentUserId);
 
     List<UserDTO> searchUsers(String query, Long currentUserId);
 

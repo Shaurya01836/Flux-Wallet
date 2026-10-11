@@ -154,7 +154,7 @@ const Analytics = ({
 
           <div className="flex flex-col md:flex-row gap-10 items-center md:items-start bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
             {/* --- Left: The Donut Chart (Recharts) --- */}
-            <div className="relative w-48 h-48 md:w-56 md:h-56 flex-shrink-0 flex items-center justify-center">
+            <div className="relative w-48 h-48 md:w-56 md:h-56 flex-shrink-0 flex items-center justify-center min-w-0" style={{ minWidth: 0, minHeight: 192 }}>
               {/* Render text underneath the SVG so tooltips display on top */}
               <div className="absolute inset-[18%] md:inset-[20%] bg-white rounded-full flex flex-col items-center justify-center shadow-inner pointer-events-none">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
@@ -167,7 +167,7 @@ const Analytics = ({
                   {expenses.length} txns
                 </span>
               </div>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={192}>
                 <PieChart>
                   <Pie
                     data={categoryStats.stats}
@@ -228,10 +228,10 @@ const Analytics = ({
           </div>
 
           {/* Daily Trend Chart (Recharts) */}
-          <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm mt-4">
+          <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm mt-4 min-w-0">
             <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-6">Daily Spending Trend</h4>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-48 w-full min-w-0" style={{ minWidth: 0, minHeight: 192 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={192}>
                 <BarChart data={dailySpend} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                   <XAxis 

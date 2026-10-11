@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaWallet, FaArrowDown, FaArrowUp, FaServer } from "react-icons/fa";
+import { FaPlus, FaWallet, FaArrowDown, FaArrowUp, FaServer, FaUserFriends, FaCalendarAlt } from "react-icons/fa";
 import api from "../api";
 import AddTransactionModal from "../components/AddTransactionModal";
 import DashboardHeader from "../components/DashboardHeader";
@@ -13,6 +13,10 @@ import SplitExpensesTab from "../components/SplitExpensesTab";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+
+  // Child Refs for tab-specific actions
+  const splitRef = useRef(null);
+  const subsRef = useRef(null);
 
   // --- State ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -67,11 +71,27 @@ const Dashboard = () => {
     initDashboard();
   }, [navigate]);
 
-  // --- 2. Fetch Stats (Balance/Budget) when Month/User changes ---
+  // Split Stats (for dynamic header when on Split tab)
+  const [splitStats, setSplitStats] = useState({
+    totalOwedToYou: 0,
+    totalYouOwe: 0,
+    netBalance: 0,
+  });
+
+  // Subscription Stats (for dynamic header when on Subscriptions tab)
+  const [subStats, setSubStats] = useState({
+    monthlyOutflow: 0,
+    activeCount: 0,
+    upcomingDueTotal: 0,
+  });
+
+  // --- 2. Fetch Stats (Balance/Budget/Split/Subs) when Month/User changes ---
   useEffect(() => {
     if (!isServerWaking && user && selectedMonth) {
       fetchBudget(user.id, selectedMonth);
       fetchStats(user.id, selectedMonth);
+      fetchSplitStats(user.id);
+      fetchSubStats(user.id);
     }
   }, [isServerWaking, user, selectedMonth]);
 
@@ -102,6 +122,53 @@ const Dashboard = () => {
       });
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchSplitStats = async (uid) => {
+    try {
+      const res = await api.get(`/api/split/balances/${uid}`);
+      if (res.data) {
+        setSplitStats({
+          totalOwedToYou: res.data.totalOwedToYou || 0,
+          totalYouOwe: res.data.totalYouOwe || 0,
+          netBalance: res.data.netBalance || 0,
+        });
+      }
+    } catch (e) {
+      console.error("Failed to fetch split stats", e);
+    }
+  };
+
+  const fetchSubStats = async (uid) => {
+    try {
+      const res = await api.get(`/api/subscriptions/user/${uid}`);
+      const subs = res.data || [];
+      const activeSubs = subs.filter((s) => s.status === "ACTIVE");
+      const outflow = activeSubs.reduce((acc, s) => {
+        let monthly = s.amount;
+        if (s.billingCycle === "WEEKLY") monthly = s.amount * 4.33;
+        else if (s.billingCycle === "YEARLY") monthly = s.amount / 12;
+        return acc + monthly;
+      }, 0);
+
+      const today = new Date();
+      const nextWeek = new Date();
+      nextWeek.setDate(today.getDate() + 7);
+
+      const dueTotal = activeSubs.filter((s) => {
+        if (!s.nextBillingDate) return false;
+        const d = new Date(s.nextBillingDate);
+        return d >= today && d <= nextWeek;
+      }).reduce((acc, s) => acc + s.amount, 0);
+
+      setSubStats({
+        monthlyOutflow: Math.round(outflow),
+        activeCount: activeSubs.length,
+        upcomingDueTotal: Math.round(dueTotal),
+      });
+    } catch (e) {
+      console.error("Failed to fetch sub stats", e);
     }
   };
 
@@ -295,65 +362,139 @@ const Dashboard = () => {
             onSelectTab={setActiveTab}
           />
 
-          <section className="relative mt-2 rounded-[2rem] p-8 shadow-2xl overflow-hidden group border border-white/10 bg-white/[0.02] backdrop-blur-3xl">
+          <section className="relative mt-2 rounded-[2rem] p-8 shadow-2xl overflow-hidden group border border-white/10 bg-white/[0.02] backdrop-blur-3xl transition-all duration-500">
             {/* Animated inner gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-transparent to-rose-500/5 opacity-50 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+            <div className={`absolute inset-0 bg-gradient-to-br transition-opacity duration-700 pointer-events-none opacity-50 group-hover:opacity-100 ${
+              activeTab === "split"
+                ? "from-emerald-500/10 via-transparent to-rose-500/10"
+                : activeTab === "subscriptions"
+                ? "from-indigo-500/15 via-transparent to-purple-500/10"
+                : "from-indigo-500/10 via-transparent to-rose-500/5"
+            }`}></div>
 
             <div className="relative z-10 flex flex-col justify-between h-full gap-8">
+              {/* Header row inside card */}
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2 text-indigo-300">
-                  <FaWallet className="text-[12px]" />
+                  {activeTab === "split" ? (
+                    <FaUserFriends className="text-[12px]" />
+                  ) : activeTab === "subscriptions" ? (
+                    <FaCalendarAlt className="text-[12px]" />
+                  ) : (
+                    <FaWallet className="text-[12px]" />
+                  )}
                   <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">
-                    {monthlyGoal > 0 ? "Free to Spend" : "Net Balance"}
+                    {activeTab === "split"
+                      ? "Net Split Balance"
+                      : activeTab === "subscriptions"
+                      ? "Monthly Subscriptions"
+                      : monthlyGoal > 0
+                      ? "Free to Spend"
+                      : "Net Balance"}
                   </span>
                 </div>
-                <button
-                  onClick={handleSetGoal}
-                  className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-all backdrop-blur-md border border-white/5"
-                >
-                  Edit Budget
-                </button>
+
+                {activeTab === "activity" || activeTab === "analytics" ? (
+                  <button
+                    onClick={handleSetGoal}
+                    className="px-4 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-all backdrop-blur-md border border-white/5 cursor-pointer"
+                  >
+                    Edit Budget
+                  </button>
+                ) : activeTab === "split" ? (
+                  <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border ${
+                    splitStats.netBalance > 0
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      : splitStats.netBalance < 0
+                      ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                      : "bg-white/5 text-gray-400 border-white/10"
+                  }`}>
+                    {splitStats.netBalance > 0 ? "You are Owed" : splitStats.netBalance < 0 ? "You are in Debt" : "All Settled"}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                    {subStats.activeCount} Active
+                  </span>
+                )}
               </div>
 
+              {/* Hero Amount */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-baseline justify-between">
-                  <h1 className="text-5xl font-extrabold tracking-tight text-white drop-shadow-sm flex items-center">
+                  <h1 className="text-5xl font-extrabold tracking-tight text-white drop-shadow-sm flex items-center tabular-nums">
                     <span className="text-2xl text-indigo-400 font-medium mr-1.5 opacity-80">Rs.</span>
-                    {monthlyGoal > 0 ? remaining.toLocaleString() : stats.balance.toLocaleString()}
+                    {activeTab === "split"
+                      ? (splitStats.netBalance > 0 ? `+${splitStats.netBalance.toLocaleString()}` : Math.abs(splitStats.netBalance).toLocaleString())
+                      : activeTab === "subscriptions"
+                      ? subStats.monthlyOutflow.toLocaleString()
+                      : monthlyGoal > 0
+                      ? remaining.toLocaleString()
+                      : stats.balance.toLocaleString()}
                   </h1>
-                  {monthlyGoal > 0 && (
+
+                  {/* Badge on Right */}
+                  {activeTab === "activity" && monthlyGoal > 0 ? (
                     <span className={`text-xs font-bold px-3 py-1.5 rounded-xl border ${isOver ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"} shadow-sm`}>
                       {pct}% Used
                     </span>
-                  )}
+                  ) : activeTab === "split" ? (
+                    <span className="text-xs font-bold text-gray-400">
+                      {splitStats.netBalance >= 0 ? "Overall Positive" : "Overall Negative"}
+                    </span>
+                  ) : activeTab === "subscriptions" ? (
+                    <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-purple-500/10 text-purple-300 border border-purple-500/20 shadow-sm">
+                      Per Month
+                    </span>
+                  ) : null}
                 </div>
               </div>
 
+              {/* Lower Breakdown Card */}
               <div className="bg-black/20 p-5 rounded-2xl border border-white/5 shadow-inner">
-                {monthlyGoal > 0 && (
+                {activeTab === "activity" && monthlyGoal > 0 && (
                   <div className="w-full bg-black/50 h-1.5 rounded-full mb-6 overflow-hidden shadow-inner relative">
                     <div className={`absolute top-0 bottom-0 left-0 transition-all duration-1000 ease-out ${isOver ? "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]" : "bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"}`} style={{ width: `${pct}%` }}>
                       <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
                     </div>
                   </div>
                 )}
+
                 <div className="flex divide-x divide-white/5">
+                  {/* Left Pill */}
                   <div className="flex-1 flex items-center gap-2 md:gap-4 pr-2 md:pr-4 group/income overflow-hidden">
                     <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover/income:bg-emerald-500/20 group-hover/income:scale-110 transition-all shrink-0">
                       <FaArrowDown size={12} />
                     </div>
                     <div className="overflow-hidden">
-                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">Income</p>
-                      <p className="text-sm md:text-base font-bold text-gray-100 truncate">Rs.{stats.income.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">
+                        {activeTab === "split" ? "Owed to you" : activeTab === "subscriptions" ? "Active Subs" : "Income"}
+                      </p>
+                      <p className="text-sm md:text-base font-bold text-gray-100 truncate tabular-nums">
+                        {activeTab === "split"
+                          ? `Rs.${splitStats.totalOwedToYou.toLocaleString()}`
+                          : activeTab === "subscriptions"
+                          ? `${subStats.activeCount} Subscriptions`
+                          : `Rs.${stats.income.toLocaleString()}`}
+                      </p>
                     </div>
                   </div>
+
+                  {/* Right Pill */}
                   <div className="flex-1 flex items-center gap-2 md:gap-4 pl-3 md:pl-4 group/expense overflow-hidden">
                     <div className="w-10 h-10 rounded-2xl bg-rose-500/10 flex items-center justify-center text-rose-400 group-hover/expense:bg-rose-500/20 group-hover/expense:scale-110 transition-all shrink-0">
                       <FaArrowUp size={12} />
                     </div>
                     <div className="overflow-hidden">
-                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">Expense</p>
-                      <p className="text-sm md:text-base font-bold text-gray-100 truncate">Rs.{stats.expense.toLocaleString()}</p>
+                      <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-0.5 truncate">
+                        {activeTab === "split" ? "You Owe" : activeTab === "subscriptions" ? "Due This Week" : "Expense"}
+                      </p>
+                      <p className="text-sm md:text-base font-bold text-gray-100 truncate tabular-nums">
+                        {activeTab === "split"
+                          ? `Rs.${splitStats.totalYouOwe.toLocaleString()}`
+                          : activeTab === "subscriptions"
+                          ? `Rs.${subStats.upcomingDueTotal.toLocaleString()}`
+                          : `Rs.${stats.expense.toLocaleString()}`}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -370,7 +511,7 @@ const Dashboard = () => {
               className={`absolute top-1 bottom-1 w-[calc(25%-4px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${
                 activeTab === "activity"
                   ? "left-1"
-                  : activeTab === "analytics"
+                  : activeTab === "split"
                   ? "left-[calc(25%+1px)]"
                   : activeTab === "subscriptions"
                   ? "left-[calc(50%+1px)]"
@@ -379,23 +520,23 @@ const Dashboard = () => {
             ></div>
             <button
               onClick={() => setActiveTab("activity")}
-              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate cursor-pointer ${
                 activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
               Activity
             </button>
             <button
-              onClick={() => setActiveTab("analytics")}
-              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
-                activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              onClick={() => setActiveTab("split")}
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate cursor-pointer ${
+                activeTab === "split" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
-              Analytics
+              Split
             </button>
             <button
               onClick={() => setActiveTab("subscriptions")}
-              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate cursor-pointer ${
                 activeTab === "subscriptions" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
@@ -403,12 +544,12 @@ const Dashboard = () => {
               <span className="hidden sm:inline">Subscriptions</span>
             </button>
             <button
-              onClick={() => setActiveTab("split")}
-              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate ${
-                activeTab === "split" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              onClick={() => setActiveTab("analytics")}
+              className={`flex-1 relative z-10 px-1 text-[9px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest transition-colors truncate cursor-pointer ${
+                activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
               }`}
             >
-              Split
+              Analytics
             </button>
           </div>
 
@@ -426,35 +567,67 @@ const Dashboard = () => {
                 hasMore={hasMore}
                 isFetching={isFetchingTxns}
               />
-            ) : activeTab === "analytics" ? (
+            ) : activeTab === "split" ? (
+              <SplitExpensesTab
+                ref={splitRef}
+                user={user}
+                onSplitActivity={(data) => {
+                  if (data) {
+                    setSplitStats({
+                      totalOwedToYou: data.totalOwedToYou || 0,
+                      totalYouOwe: data.totalYouOwe || 0,
+                      netBalance: data.netBalance || 0,
+                    });
+                  } else if (user) {
+                    fetchSplitStats(user.id);
+                  }
+                }}
+              />
+            ) : activeTab === "subscriptions" ? (
+              <Subscriptions
+                ref={subsRef}
+                onTransactionActivity={() => {
+                  fetchStats(user.id, selectedMonth);
+                  fetchSubStats(user.id);
+                  loadTransactions(0, true);
+                }}
+              />
+            ) : (
               <Analytics
                 transactions={filteredTransactions}
                 monthOptions={monthOptions}
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
               />
-            ) : activeTab === "subscriptions" ? (
-              <Subscriptions onTransactionActivity={() => {
-                fetchStats(user.id, selectedMonth);
-                loadTransactions(0, true);
-              }} />
-            ) : (
-              <SplitExpensesTab user={user} />
             )}
           </div>
         </div>
       </div>
 
-      {activeTab !== "subscriptions" && activeTab !== "split" && (
-        <div className="fixed bottom-6 right-6 z-40">
-          <button
-            onClick={() => { setTransactionToEdit(null); setIsModalOpen(true); }}
-            className="w-14 h-14 bg-indigo-600 text-white rounded-2xl shadow-[0_10px_25px_rgba(79,70,229,0.4)] flex items-center justify-center hover:scale-105 hover:-translate-y-1 active:scale-95 transition-all duration-300"
-          >
-            <FaPlus size={18} />
-          </button>
-        </div>
-      )}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => {
+            if (activeTab === "split") {
+              splitRef.current?.openAddExpenseModal();
+            } else if (activeTab === "subscriptions") {
+              subsRef.current?.openAddSubscriptionModal();
+            } else {
+              setTransactionToEdit(null);
+              setIsModalOpen(true);
+            }
+          }}
+          className="w-14 h-14 bg-indigo-600 text-white rounded-2xl shadow-[0_10px_25px_rgba(79,70,229,0.4)] flex items-center justify-center hover:scale-105 hover:-translate-y-1 active:scale-95 transition-all duration-300 cursor-pointer"
+          title={
+            activeTab === "split"
+              ? "Add Split Expense"
+              : activeTab === "subscriptions"
+              ? "Add Subscription"
+              : "Add Transaction"
+          }
+        >
+          <FaPlus size={18} />
+        </button>
+      </div>
 
       <AddTransactionModal
         isOpen={isModalOpen}

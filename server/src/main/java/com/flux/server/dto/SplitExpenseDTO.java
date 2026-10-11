@@ -24,5 +24,14 @@ public class SplitExpenseDTO {
 
     private Boolean isSettled;
     private LocalDateTime settledAt;
+
+    private Long settleRequestedById;
+    private String settleRequestedByName;
+    private LocalDateTime settlementRequestedAt;
+
+    private Long deleteRequestedById;
+    private String deleteRequestedByName;
+    private LocalDateTime deleteRequestedAt;
+
     private LocalDateTime createdAt;
 }

@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import { createPortal } from "react-dom";
 import { FaPlus, FaCalendarAlt, FaPen, FaTrashAlt, FaPlay, FaPause, FaSpinner, FaTimes, FaCheck, FaExclamationTriangle, FaSync } from "react-icons/fa";
 import { FaMoneyBill1Wave } from "react-icons/fa6";
 import api from "../api";
 
-const Subscriptions = ({ onTransactionActivity }) => {
+const Subscriptions = forwardRef(({ onTransactionActivity }, ref) => {
   const [subscriptions, setSubscriptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -164,6 +164,12 @@ const Subscriptions = ({ onTransactionActivity }) => {
     setIsModalOpen(true);
   };
 
+  useImperativeHandle(ref, () => ({
+    openAddSubscriptionModal: () => {
+      openModal(null);
+    },
+  }));
+
   // Normative monthly cost calculation
   const monthlyOutflow = useMemo(() => {
     return subscriptions
@@ -229,34 +235,10 @@ const Subscriptions = ({ onTransactionActivity }) => {
             <FaSync className={`text-[10px] ${isProcessingDue ? 'animate-spin text-indigo-500' : ''}`} />
             {isProcessingDue ? 'Processing...' : 'Run Due Check'}
           </button>
-          
-          <button
-            onClick={() => openModal()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:scale-[1.02]"
-          >
-            <FaPlus className="text-[10px]" /> Add Subscription
-          </button>
         </div>
       </div>
 
-      {/* Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-white p-5 rounded-[1.5rem] border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Total Monthly Cost</p>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-            Rs. {Math.round(monthlyOutflow).toLocaleString()}
-          </h2>
-          <span className="text-[10px] text-gray-400 font-medium mt-1">Normalized across billing cycles</span>
-        </div>
 
-        <div className="bg-white p-5 rounded-[1.5rem] border border-gray-100 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Active Tracker</p>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-            {activeCount}
-          </h2>
-          <span className="text-[10px] text-gray-400 font-medium mt-1">Active repeating debits</span>
-        </div>
-      </div>
 
       {/* Upcoming Alerts Banner */}
       {upcomingBills.length > 0 && (
@@ -504,6 +486,6 @@ const Subscriptions = ({ onTransactionActivity }) => {
       )}
     </section>
   );
-};
+});
 
 export default Subscriptions;

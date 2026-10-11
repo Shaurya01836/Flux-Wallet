@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
 import {
   FaUserFriends,
   FaPlus,
@@ -16,13 +16,17 @@ import {
   FaCheck,
   FaClock,
   FaLink,
+  FaTimes,
+  FaHourglassHalf,
+  FaPen,
+  FaWhatsapp,
 } from "react-icons/fa";
 import api from "../api";
 import AddSplitExpenseModal from "./AddSplitExpenseModal";
 import AddFriendModal from "./AddFriendModal";
 import LinkFriendEmailModal from "./LinkFriendEmailModal";
 
-const SplitExpensesTab = ({ user }) => {
+const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
   const [balances, setBalances] = useState({
     totalOwedToYou: 0,
     totalYouOwe: 0,
@@ -38,11 +42,20 @@ const SplitExpensesTab = ({ user }) => {
   const [searchFriendText, setSearchFriendText] = useState("");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [expenseToEdit, setExpenseToEdit] = useState(null);
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
   const [isLinkEmailModalOpen, setIsLinkEmailModalOpen] = useState(false);
   const [friendToLinkEmail, setFriendToLinkEmail] = useState(null);
   const [modalDefaultFriend, setModalDefaultFriend] = useState(null);
   const [isSettling, setIsSettling] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    openAddExpenseModal: () => {
+      setExpenseToEdit(null);
+      setModalDefaultFriend(selectedFriend || null);
+      setIsModalOpen(true);
+    },
+  }));
 
   const loadSplitData = async () => {
     if (!user) return;
@@ -52,8 +65,12 @@ const SplitExpensesTab = ({ user }) => {
         api.get(`/api/split/balances/${user.id}`),
         api.get(`/api/split/user/${user.id}`),
       ]);
-      setBalances(balRes.data || { totalOwedToYou: 0, totalYouOwe: 0, netBalance: 0, friends: [] });
+      const balData = balRes.data || { totalOwedToYou: 0, totalYouOwe: 0, netBalance: 0, friends: [] };
+      setBalances(balData);
       setExpenses(expRes.data || []);
+      if (onSplitActivity) {
+        onSplitActivity(balData);
+      }
     } catch (err) {
       console.error("Failed to fetch split data", err);
     } finally {
@@ -82,20 +99,43 @@ const SplitExpensesTab = ({ user }) => {
     }
   };
 
-  const handleSettleSingle = async (expenseId) => {
-    const ok = await window.confirm("Mark this expense as settled?");
+  const handleSettleSingle = async (expense) => {
+    const isPayer = expense.paidById === user?.id; // You are owed the money
+    const hasIncomingRequest = expense.settleRequestedById && expense.settleRequestedById !== user?.id;
+
+    let confirmMsg = "Mark this expense as settled?";
+    if (!isPayer && !hasIncomingRequest) {
+      confirmMsg = "You owe this amount. Send a settlement request to your friend to approve?";
+    } else if (hasIncomingRequest) {
+      confirmMsg = `Your friend requested to settle this. Accept and mark as settled?`;
+    }
+
+    const ok = await window.confirm(confirmMsg);
     if (!ok) return;
+
     try {
-      await api.put(`/api/split/settle/${expenseId}`);
+      await api.put(`/api/split/settle/${expense.id}?currentUserId=${user.id}`);
       loadSplitData();
     } catch (err) {
       console.error("Failed to settle expense", err);
-      alert("Failed to settle expense.");
+      alert(err.response?.data?.message || "Failed to settle expense.");
+    }
+  };
+
+  const handleRejectSettle = async (expenseId) => {
+    const ok = await window.confirm("Decline this settlement request?");
+    if (!ok) return;
+    try {
+      await api.put(`/api/split/settle/${expenseId}/reject?currentUserId=${user.id}`);
+      loadSplitData();
+    } catch (err) {
+      console.error("Failed to reject settlement", err);
+      alert("Failed to decline settlement request.");
     }
   };
 
   const handleSettleAllWithFriend = async (friendId, friendName) => {
-    const ok = await window.confirm(`Settle all pending balances with ${friendName}?`);
+    const ok = await window.confirm(`Settle pending balances with ${friendName}?`);
     if (!ok) return;
     setIsSettling(true);
     try {
@@ -109,21 +149,42 @@ const SplitExpensesTab = ({ user }) => {
     }
   };
 
-  const handleDeleteExpense = async (expenseId) => {
-    const ok = await window.confirm("Delete this expense record?");
+  const handleDeleteExpense = async (expense) => {
+    const hasIncomingDelete = expense.deleteRequestedById && expense.deleteRequestedById !== user?.id;
+    let confirmMsg = "Delete this expense record?";
+    if (!expense.isSettled && !hasIncomingDelete) {
+      confirmMsg = "Request deletion of this active split expense? The other person will need to approve.";
+    } else if (hasIncomingDelete) {
+      confirmMsg = "Your friend requested to delete this expense. Confirm and permanently remove it?";
+    }
+
+    const ok = await window.confirm(confirmMsg);
     if (!ok) return;
+
     try {
-      await api.delete(`/api/split/expense/${expenseId}?currentUserId=${user.id}`);
+      await api.delete(`/api/split/expense/${expense.id}?currentUserId=${user.id}`);
       loadSplitData();
     } catch (err) {
       console.error("Failed to delete expense", err);
-      alert("Failed to delete expense.");
+      alert(err.response?.data?.message || "Failed to delete expense.");
+    }
+  };
+
+  const handleRejectDelete = async (expenseId) => {
+    const ok = await window.confirm("Decline this deletion request?");
+    if (!ok) return;
+    try {
+      await api.put(`/api/split/expense/${expenseId}/reject-delete?currentUserId=${user.id}`);
+      loadSplitData();
+    } catch (err) {
+      console.error("Failed to decline delete request", err);
+      alert("Failed to decline deletion request.");
     }
   };
 
   const handleDeleteFriend = async (friendId, friendName) => {
     const ok = await window.confirm(
-      `Remove ${friendName} from your friends? This will also remove associated split records between you two.`
+      `Remove ${friendName} from your friends list? Your transaction history and split records will be safely preserved.`
     );
     if (!ok) return;
     try {
@@ -136,6 +197,90 @@ const SplitExpensesTab = ({ user }) => {
       console.error("Failed to delete friend", err);
       alert("Failed to delete friend.");
     }
+  };
+
+  // --- WhatsApp Sharing Helper ---
+  const handleShareWhatsAppForFriend = (friend) => {
+    if (!friend) return;
+    const friendName = friend.friendName || "Friend";
+    const myName = user?.name || "Your Friend";
+    const net = friend.netAmount || 0;
+    const isOwed = net > 0; // friend owes you
+    const isDebt = net < 0; // you owe friend
+
+    // Gather unsettled transactions with this friend
+    const friendTxns = expenses.filter(
+      (e) =>
+        !e.isSettled &&
+        ((e.paidById === friend.friendId && e.owedById === user?.id) ||
+         (e.owedById === friend.friendId && e.paidById === user?.id))
+    );
+
+    let statusLine = "";
+    if (isOwed) {
+      statusLine = `*Pending Balance:* You owe *Rs. ${net.toFixed(2)}* to ${myName}.`;
+    } else if (isDebt) {
+      statusLine = `*Pending Balance:* ${myName} owes you *Rs. ${Math.abs(net).toFixed(2)}*.`;
+    } else {
+      statusLine = `All clear! We are fully settled up (Rs. 0.00).`;
+    }
+
+    let itemsList = "";
+    if (friendTxns.length > 0) {
+      itemsList = "\n\n*Pending Splits Breakdown:*\n" + friendTxns
+        .slice(0, 5)
+        .map((t) => {
+          const whoPaid = t.paidById === user?.id ? "Paid by " + myName : "Paid by " + friendName;
+          return `• *${t.title}* - Rs. ${t.amount.toFixed(2)} (${whoPaid})`;
+        })
+        .join("\n");
+      if (friendTxns.length > 5) {
+        itemsList += `\n...and ${friendTxns.length - 5} more transactions.`;
+      }
+    }
+
+    const websiteUrl = window.location.origin.includes("localhost")
+      ? "https://flux-wallet-secure.vercel.app"
+      : window.location.origin;
+
+    let emailLine = "";
+    if (friend.friendEmail && !friend.friendEmail.includes("@offline.flux")) {
+      emailLine = `\n*Linked Email:* ${friend.friendEmail}\n(Sign in with this Google account to instantly see and settle this bill!)`;
+    }
+
+    const appLinkNote = `\n\n*View details & settle on Flux Wallet:*\n${websiteUrl}${emailLine}`;
+
+    const text = `Hey ${friendName}!\n\nHere is our latest split summary on *Flux Wallet*:\n\n${statusLine}${itemsList}${appLinkNote}\n\nCheers!`;
+
+    // Copy formatted text to clipboard as seamless backup for desktop/web
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+
+    const phone = friend.friendPhoneNumber ? friend.friendPhoneNumber.replace(/\D/g, "") : "";
+    const url = phone
+      ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+
+    window.open(url, "_blank");
+  };
+
+  const handleShareWhatsAppSingle = (exp) => {
+    const isPayer = exp.paidById === user?.id;
+    const otherPersonName = isPayer ? exp.owedByName || "Friend" : exp.paidByName || "Friend";
+    const myName = user?.name || "Your Friend";
+    const amountStr = `Rs. ${exp.amount?.toFixed(2) || "0.00"}`;
+    const websiteUrl = window.location.origin.includes("localhost")
+      ? "https://flux-wallet-secure.vercel.app"
+      : window.location.origin;
+
+    const text = `Hey ${otherPersonName}!\n\nJust shared a split expense with you on *Flux Wallet*:\n\n*Expense:* ${exp.title}\n*Amount:* ${amountStr}\n*Paid by:* ${isPayer ? myName : otherPersonName}\n*Category:* ${exp.category || "General"}\n\n*View & settle on Flux Wallet:*\n${websiteUrl}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
   };
 
   // Mobile sub-tab: "friends" or "activity"
@@ -201,131 +346,10 @@ const SplitExpensesTab = ({ user }) => {
             <FaSync className={`text-[10px] ${isLoading ? "animate-spin text-indigo-500" : ""}`} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
-
-          <button
-            onClick={() => {
-              setModalDefaultFriend(selectedFriend || null);
-              setIsModalOpen(true);
-            }}
-            className="flex-1 sm:flex-none justify-center flex items-center gap-1.5 px-3.5 py-2 sm:py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all active:scale-95 hover:scale-[1.02]"
-          >
-            <FaPlus className="text-[10px]" /> Split Expense
-          </button>
         </div>
       </div>
 
-      {/* Smart Unified Split Balance Card */}
-      <div className="relative rounded-2xl sm:rounded-[1.75rem] p-5 sm:p-6 border border-gray-100 bg-white shadow-sm hover:shadow-md transition-all overflow-hidden group">
-        {/* Subtle accent glow in background */}
-        <div
-          className={`absolute -right-12 -top-12 w-48 h-48 rounded-full blur-3xl pointer-events-none opacity-40 transition-colors duration-500 ${
-            balances.netBalance > 0
-              ? "bg-emerald-200"
-              : balances.netBalance < 0
-              ? "bg-rose-200"
-              : "bg-indigo-100"
-          }`}
-        ></div>
 
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5 sm:gap-6">
-          {/* Main Net Balance Section */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span
-                className={`p-1.5 rounded-xl ${
-                  balances.netBalance > 0
-                    ? "bg-emerald-50 text-emerald-600"
-                    : balances.netBalance < 0
-                    ? "bg-rose-50 text-rose-600"
-                    : "bg-indigo-50 text-indigo-600"
-                }`}
-              >
-                <FaMoneyBillWave size={12} />
-              </span>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                Net Split Balance
-              </span>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  balances.netBalance > 0
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : balances.netBalance < 0
-                    ? "bg-rose-50 text-rose-700 border border-rose-200"
-                    : "bg-gray-100 text-gray-600"
-                }`}
-              >
-                {balances.netBalance > 0
-                  ? "In Profit"
-                  : balances.netBalance < 0
-                  ? "In Debt"
-                  : "All Settled"}
-              </span>
-            </div>
-
-            <div className="flex items-baseline gap-2">
-              <h2
-                className={`text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight tabular-nums ${
-                  balances.netBalance > 0
-                    ? "text-emerald-600"
-                    : balances.netBalance < 0
-                    ? "text-rose-600"
-                    : "text-gray-900"
-                }`}
-              >
-                {balances.netBalance > 0 ? "+" : ""}
-                Rs. {balances.netBalance?.toFixed(2) || "0.00"}
-              </h2>
-            </div>
-
-            <p className="text-[11px] text-gray-500 font-medium">
-              {balances.netBalance > 0
-                ? "Overall, your friends owe you money"
-                : balances.netBalance < 0
-                ? "Overall, you need to pay back to friends"
-                : "No pending balances with any friends"}
-            </p>
-          </div>
-
-          {/* Breakdown Pills: You are owed & You owe */}
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:w-auto w-full pt-3 md:pt-0 border-t md:border-t-0 md:border-l border-gray-100 md:pl-6 shrink-0">
-            {/* Owed to you */}
-            <div className="bg-emerald-50/50 hover:bg-emerald-50/80 transition p-3 rounded-2xl border border-emerald-100/70 min-w-[130px] sm:min-w-[150px]">
-              <div className="flex items-center gap-1.5 text-emerald-700 mb-1">
-                <span className="p-1 rounded-md bg-emerald-100/80 text-emerald-700">
-                  <FaArrowDown size={9} />
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider">
-                  You are owed
-                </span>
-              </div>
-              <p className="text-sm sm:text-base font-extrabold text-emerald-700 tabular-nums">
-                Rs. {balances.totalOwedToYou?.toFixed(2) || "0.00"}
-              </p>
-              <span className="text-[9px] text-emerald-600/80 font-medium">
-                Incoming return
-              </span>
-            </div>
-
-            {/* You owe */}
-            <div className="bg-rose-50/50 hover:bg-rose-50/80 transition p-3 rounded-2xl border border-rose-100/70 min-w-[130px] sm:min-w-[150px]">
-              <div className="flex items-center gap-1.5 text-rose-700 mb-1">
-                <span className="p-1 rounded-md bg-rose-100/80 text-rose-700">
-                  <FaArrowUp size={9} />
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-wider">
-                  You owe
-                </span>
-              </div>
-              <p className="text-sm sm:text-base font-extrabold text-rose-700 tabular-nums">
-                Rs. {balances.totalYouOwe?.toFixed(2) || "0.00"}
-              </p>
-              <span className="text-[9px] text-rose-600/80 font-medium">
-                Pending payout
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Mobile Switcher (visible only on mobile lg:hidden) */}
       <div className="flex lg:hidden bg-gray-200/60 p-1 rounded-xl text-xs font-bold uppercase tracking-wider">
@@ -494,6 +518,19 @@ const SplitExpensesTab = ({ user }) => {
                             <span>Delete</span>
                           </button>
 
+                          {/* WhatsApp Share Button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShareWhatsAppForFriend(f);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl text-emerald-600 hover:bg-emerald-50 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                            title="Share split summary with friend on WhatsApp"
+                          >
+                            <FaWhatsapp size={12} className="text-emerald-500" />
+                            <span>Share</span>
+                          </button>
+
                           {/* Link Email Button if not already joined or if offline */}
                           {!f.isOnboarded && (
                             <button
@@ -540,16 +577,29 @@ const SplitExpensesTab = ({ user }) => {
           }`}
         >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
-            <div>
-              <h4 className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                <FaReceipt className="text-indigo-600 shrink-0" />
-                <span className="truncate">
-                  {selectedFriend ? `With ${selectedFriend.friendName}` : "Expense Activity"}
-                </span>
-              </h4>
-              <p className="text-[11px] text-gray-400">
-                {displayedExpenses.length} transaction{displayedExpenses.length === 1 ? "" : "s"}
-              </p>
+            <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
+              <div>
+                <h4 className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                  <FaReceipt className="text-indigo-600 shrink-0" />
+                  <span className="truncate">
+                    {selectedFriend ? `With ${selectedFriend.friendName}` : "Expense Activity"}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-gray-400">
+                  {displayedExpenses.length} transaction{displayedExpenses.length === 1 ? "" : "s"}
+                </p>
+              </div>
+
+              {selectedFriend && (
+                <button
+                  onClick={() => handleShareWhatsAppForFriend(selectedFriend)}
+                  className="px-2.5 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs active:scale-95 shrink-0"
+                  title="Share summary on WhatsApp"
+                >
+                  <FaWhatsapp size={13} className="text-emerald-500" />
+                  <span>WhatsApp Summary</span>
+                </button>
+              )}
             </div>
 
             {/* Filter buttons - scrollable on mobile */}
@@ -640,6 +690,14 @@ const SplitExpensesTab = ({ user }) => {
                             <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                               <FaCheckCircle size={8} /> Settled
                             </span>
+                          ) : exp.settleRequestedById ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <FaHourglassHalf size={8} /> Settle Requested
+                            </span>
+                          ) : exp.deleteRequestedById ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                              <FaTrashAlt size={8} /> Delete Requested
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                               Pending
@@ -659,8 +717,62 @@ const SplitExpensesTab = ({ user }) => {
                           )}
                         </p>
 
+                        {/* Settlement Request Banner */}
+                        {exp.settleRequestedById && !exp.isSettled && (
+                          <div className="mt-2 p-2 rounded-xl bg-indigo-50/70 border border-indigo-100 flex items-center justify-between gap-2 flex-wrap text-[10px]">
+                            <span className="text-indigo-800 font-semibold">
+                              {exp.settleRequestedById === user?.id
+                                ? "⏳ Waiting for friend to approve settlement"
+                                : `📩 ${exp.settleRequestedByName || "Friend"} requested to settle this`}
+                            </span>
+                            {exp.settleRequestedById !== user?.id && (
+                              <div className="flex items-center gap-1 ml-auto">
+                                <button
+                                  onClick={() => handleSettleSingle(exp)}
+                                  className="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer transition shadow-xs"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  onClick={() => handleRejectSettle(exp.id)}
+                                  className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold cursor-pointer transition"
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Delete Request Banner */}
+                        {exp.deleteRequestedById && !exp.isSettled && (
+                          <div className="mt-2 p-2 rounded-xl bg-rose-50/70 border border-rose-100 flex items-center justify-between gap-2 flex-wrap text-[10px]">
+                            <span className="text-rose-800 font-semibold">
+                              {exp.deleteRequestedById === user?.id
+                                ? "⏳ Waiting for friend to approve deletion"
+                                : `⚠️ ${exp.deleteRequestedByName || "Friend"} requested to delete this record`}
+                            </span>
+                            {exp.deleteRequestedById !== user?.id && (
+                              <div className="flex items-center gap-1 ml-auto">
+                                <button
+                                  onClick={() => handleDeleteExpense(exp)}
+                                  className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer transition shadow-xs"
+                                >
+                                  Confirm Delete
+                                </button>
+                                <button
+                                  onClick={() => handleRejectDelete(exp.id)}
+                                  className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold cursor-pointer transition"
+                                >
+                                  Keep Record
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {exp.notes && (
-                          <p className="text-[10px] text-gray-400 mt-0.5 italic">
+                          <p className="text-[10px] text-gray-400 mt-1 italic">
                             {exp.notes}
                           </p>
                         )}
@@ -686,18 +798,57 @@ const SplitExpensesTab = ({ user }) => {
 
                         <div className="flex items-center justify-end gap-1.5 mt-2">
                           {!exp.isSettled && (
-                            <button
-                              onClick={() => handleSettleSingle(exp.id)}
-                              className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition"
-                              title="Mark as Settled"
-                            >
-                              <FaCheckCircle size={12} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleShareWhatsAppSingle(exp)}
+                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition cursor-pointer"
+                                title="Share this expense on WhatsApp"
+                              >
+                                <FaWhatsapp size={12} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setExpenseToEdit(exp);
+                                  setIsModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-gray-50 hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition cursor-pointer"
+                                title="Edit Expense"
+                              >
+                                <FaPen size={11} />
+                              </button>
+                              <button
+                                onClick={() => handleSettleSingle(exp)}
+                                disabled={exp.settleRequestedById === user?.id}
+                                className={`p-1.5 rounded-lg transition ${
+                                  exp.settleRequestedById === user?.id
+                                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 cursor-pointer"
+                                }`}
+                                title={
+                                  isPayer
+                                    ? "Mark as Settled"
+                                    : exp.settleRequestedById === user?.id
+                                    ? "Settlement requested - awaiting friend confirmation"
+                                    : "Request friend to settle"
+                                }
+                              >
+                                <FaCheckCircle size={12} />
+                              </button>
+                            </>
                           )}
                           <button
-                            onClick={() => handleDeleteExpense(exp.id)}
-                            className="p-1.5 rounded-lg bg-gray-50 hover:bg-rose-50 text-gray-400 hover:text-rose-600 transition"
-                            title="Delete Expense"
+                            onClick={() => handleDeleteExpense(exp)}
+                            disabled={exp.deleteRequestedById === user?.id}
+                            className={`p-1.5 rounded-lg transition ${
+                              exp.deleteRequestedById === user?.id
+                                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                : "bg-gray-50 hover:bg-rose-50 text-gray-400 hover:text-rose-600 cursor-pointer"
+                            }`}
+                            title={
+                              exp.deleteRequestedById === user?.id
+                                ? "Deletion requested - awaiting confirmation"
+                                : "Delete Expense"
+                            }
                           >
                             <FaTrashAlt size={11} />
                           </button>
@@ -712,13 +863,17 @@ const SplitExpensesTab = ({ user }) => {
         </div>
       </div>
 
-      {/* Add Split Modal */}
+      {/* Add / Edit Split Modal */}
       <AddSplitExpenseModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setExpenseToEdit(null);
+        }}
         onExpenseAdded={loadSplitData}
         currentUser={user}
         defaultFriend={modalDefaultFriend}
+        expenseToEdit={expenseToEdit}
       />
 
       {/* Add Friend Modal */}
@@ -747,6 +902,6 @@ const SplitExpensesTab = ({ user }) => {
       />
     </section>
   );
-};
+});
 
 export default SplitExpensesTab;
