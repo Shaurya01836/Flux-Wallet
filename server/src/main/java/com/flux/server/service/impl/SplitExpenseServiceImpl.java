@@ -1,0 +1,277 @@
+package com.flux.server.service.impl;
+
+import com.flux.server.dto.SplitBalanceDTO;
+import com.flux.server.dto.SplitExpenseDTO;
+import com.flux.server.dto.UserDTO;
+import com.flux.server.entity.SplitExpense;
+import com.flux.server.entity.User;
+import com.flux.server.repository.SplitExpenseRepository;
+import com.flux.server.repository.UserRepository;
+import com.flux.server.service.SplitExpenseService;
+import lombok.RequiredArgsConstructor;
+import org.modelmapper.ModelMapper;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class SplitExpenseServiceImpl implements SplitExpenseService {
+
+    private final SplitExpenseRepository splitExpenseRepository;
+    private final UserRepository userRepository;
+    private final com.flux.server.repository.FriendshipRepository friendshipRepository;
+    private final ModelMapper modelMapper;
+
+    @Override
+    @Transactional
+    public SplitExpenseDTO addExpense(SplitExpenseDTO dto) {
+        if (dto.getPaidById().equals(dto.getOwedById())) {
+            throw new IllegalArgumentException("Cannot split expense with yourself");
+        }
+
+        User paidBy = userRepository.findById(dto.getPaidById())
+                .orElseThrow(() -> new RuntimeException("Payer user not found"));
+        User owedBy = userRepository.findById(dto.getOwedById())
+                .orElseThrow(() -> new RuntimeException("Owed user not found"));
+
+        SplitExpense expense = new SplitExpense();
+        expense.setTitle(dto.getTitle());
+        expense.setAmount(dto.getAmount());
+        expense.setNotes(dto.getNotes());
+        expense.setCategory(dto.getCategory() != null ? dto.getCategory() : "General");
+        expense.setPaidBy(paidBy);
+        expense.setOwedBy(owedBy);
+        expense.setIsSettled(false);
+
+        SplitExpense saved = splitExpenseRepository.save(expense);
+
+        // Ensure friendship records exist mutually
+        ensureFriendship(paidBy, owedBy);
+        ensureFriendship(owedBy, paidBy);
+
+        return mapToDTO(saved);
+    }
+
+    private void ensureFriendship(User u1, User u2) {
+        if (!friendshipRepository.findByUserAndFriend(u1.getId(), u2.getId()).isPresent()) {
+            com.flux.server.entity.Friendship f = new com.flux.server.entity.Friendship();
+            f.setUser(u1);
+            f.setFriend(u2);
+            friendshipRepository.save(f);
+        }
+    }
+
+    @Override
+    public List<SplitExpenseDTO> getAllExpenses(Long userId) {
+        List<SplitExpense> list = splitExpenseRepository.findAllUserExpenses(userId);
+        return list.stream().map(this::mapToDTO).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<SplitExpenseDTO> getExpensesBetween(Long userId1, Long userId2) {
+        List<SplitExpense> list = splitExpenseRepository.findExpensesBetweenUsers(userId1, userId2);
+        return list.stream().map(this::mapToDTO).collect(Collectors.toList());
+    }
+
+    @Override
+    public SplitBalanceDTO getBalances(Long userId) {
+        List<SplitExpense> unpaidPaidByMe = splitExpenseRepository.findUnsettledPaidByUser(userId);
+        List<SplitExpense> unpaidOwedByMe = splitExpenseRepository.findUnsettledOwedByUser(userId);
+
+        Map<Long, User> userMap = new HashMap<>();
+        Map<Long, Double> youPaidForThemMap = new HashMap<>();
+        Map<Long, Double> theyPaidForYouMap = new HashMap<>();
+
+        for (SplitExpense exp : unpaidPaidByMe) {
+            Long friendId = exp.getOwedBy().getId();
+            userMap.put(friendId, exp.getOwedBy());
+            youPaidForThemMap.put(friendId, youPaidForThemMap.getOrDefault(friendId, 0.0) + exp.getAmount());
+        }
+
+        for (SplitExpense exp : unpaidOwedByMe) {
+            Long friendId = exp.getPaidBy().getId();
+            userMap.put(friendId, exp.getPaidBy());
+            theyPaidForYouMap.put(friendId, theyPaidForYouMap.getOrDefault(friendId, 0.0) + exp.getAmount());
+        }
+
+        // Also fetch all explicit friends added by this user (even if 0 balance)
+        List<com.flux.server.entity.Friendship> friendships = friendshipRepository.findByUserId(userId);
+        for (com.flux.server.entity.Friendship f : friendships) {
+            User friend = f.getFriend();
+            if (!userMap.containsKey(friend.getId())) {
+                userMap.put(friend.getId(), friend);
+            }
+        }
+
+        double totalOwedToYou = 0.0;
+        double totalYouOwe = 0.0;
+        List<SplitBalanceDTO.FriendBalanceDTO> friendBalances = new ArrayList<>();
+
+        for (Long friendId : userMap.keySet()) {
+            User friend = userMap.get(friendId);
+            double youPaid = youPaidForThemMap.getOrDefault(friendId, 0.0);
+            double theyPaid = theyPaidForYouMap.getOrDefault(friendId, 0.0);
+            double net = youPaid - theyPaid;
+
+            if (net > 0) {
+                totalOwedToYou += net;
+            } else if (net < 0) {
+                totalYouOwe += Math.abs(net);
+            }
+
+            SplitBalanceDTO.FriendBalanceDTO fb = new SplitBalanceDTO.FriendBalanceDTO();
+            fb.setFriendId(friend.getId());
+            fb.setFriendName(friend.getName());
+            fb.setFriendEmail(friend.getEmail());
+            fb.setFriendPhoneNumber(friend.getPhoneNumber());
+            fb.setFriendPicture(friend.getPictureUrl());
+            // Onboarded if user has logged in (lastLoginAt != null)
+            fb.setIsOnboarded(friend.getLastLoginAt() != null);
+            fb.setNetAmount(Math.round(net * 100.0) / 100.0);
+            fb.setYouPaidForThem(Math.round(youPaid * 100.0) / 100.0);
+            fb.setTheyPaidForYou(Math.round(theyPaid * 100.0) / 100.0);
+
+            friendBalances.add(fb);
+        }
+
+        // Sort friend balances: non-zero balances first, then alphabetically
+        friendBalances.sort((a, b) -> {
+            int cmp = Double.compare(Math.abs(b.getNetAmount()), Math.abs(a.getNetAmount()));
+            if (cmp != 0) return cmp;
+            return a.getFriendName().compareToIgnoreCase(b.getFriendName());
+        });
+
+        SplitBalanceDTO result = new SplitBalanceDTO();
+        result.setTotalOwedToYou(Math.round(totalOwedToYou * 100.0) / 100.0);
+        result.setTotalYouOwe(Math.round(totalYouOwe * 100.0) / 100.0);
+        result.setNetBalance(Math.round((totalOwedToYou - totalYouOwe) * 100.0) / 100.0);
+        result.setFriends(friendBalances);
+
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public UserDTO addFriendByContact(Long currentUserId, String name, String email) {
+        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
+            throw new IllegalArgumentException("A valid email address is required to add a friend");
+        }
+        String cleanEmail = email.trim().toLowerCase();
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new RuntimeException("Current user not found"));
+
+        if (currentUser.getEmail().equalsIgnoreCase(cleanEmail)) {
+            throw new IllegalArgumentException("You cannot add yourself as a friend");
+        }
+
+        // Check if user already exists with this exact email
+        Optional<User> existing = userRepository.findByEmail(cleanEmail);
+
+        User friendUser;
+        if (existing.isPresent()) {
+            friendUser = existing.get();
+        } else {
+            // Create pending placeholder user with their actual email
+            friendUser = new User();
+            friendUser.setName(name != null && !name.trim().isEmpty() ? name.trim() : "Friend");
+            friendUser.setEmail(cleanEmail);
+            friendUser.setCreatedAt(LocalDateTime.now());
+            friendUser = userRepository.save(friendUser);
+        }
+
+        // Add Friendship for current user
+        if (!friendshipRepository.findByUserAndFriend(currentUser.getId(), friendUser.getId()).isPresent()) {
+            com.flux.server.entity.Friendship f = new com.flux.server.entity.Friendship();
+            f.setUser(currentUser);
+            f.setFriend(friendUser);
+            friendshipRepository.save(f);
+        }
+
+        return modelMapper.map(friendUser, UserDTO.class);
+    }
+
+    @Override
+    @Transactional
+    public SplitExpenseDTO settleExpense(Long expenseId) {
+        SplitExpense exp = splitExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new RuntimeException("Expense not found"));
+        exp.setIsSettled(true);
+        exp.setSettledAt(LocalDateTime.now());
+        SplitExpense saved = splitExpenseRepository.save(exp);
+        return mapToDTO(saved);
+    }
+
+    @Override
+    @Transactional
+    public void settleAllWithFriend(Long currentUserId, Long friendId) {
+        List<SplitExpense> expenses = splitExpenseRepository.findExpensesBetweenUsers(currentUserId, friendId);
+        LocalDateTime now = LocalDateTime.now();
+        for (SplitExpense exp : expenses) {
+            if (!Boolean.TRUE.equals(exp.getIsSettled())) {
+                exp.setIsSettled(true);
+                exp.setSettledAt(now);
+                splitExpenseRepository.save(exp);
+            }
+        }
+    }
+
+    @Override
+    @Transactional
+    public void deleteExpense(Long expenseId, Long currentUserId) {
+        SplitExpense exp = splitExpenseRepository.findById(expenseId)
+                .orElseThrow(() -> new RuntimeException("Expense not found"));
+        if (!exp.getPaidBy().getId().equals(currentUserId) && !exp.getOwedBy().getId().equals(currentUserId)) {
+            throw new RuntimeException("Unauthorized to delete this expense");
+        }
+        splitExpenseRepository.delete(exp);
+    }
+
+    @Override
+    public List<UserDTO> searchUsers(String query, Long currentUserId) {
+        if (query == null || query.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        String cleanQuery = query.trim().toLowerCase();
+        return userRepository.findAll().stream()
+                .filter(u -> !u.getId().equals(currentUserId))
+                .filter(u -> (u.getEmail() != null && u.getEmail().toLowerCase().contains(cleanQuery)) ||
+                             (u.getName() != null && u.getName().toLowerCase().contains(cleanQuery)) ||
+                             (u.getUsername() != null && u.getUsername().toLowerCase().contains(cleanQuery)))
+                .limit(10)
+                .map(u -> modelMapper.map(u, UserDTO.class))
+                .collect(Collectors.toList());
+    }
+
+    private SplitExpenseDTO mapToDTO(SplitExpense entity) {
+        SplitExpenseDTO dto = new SplitExpenseDTO();
+        dto.setId(entity.getId());
+        dto.setTitle(entity.getTitle());
+        dto.setAmount(entity.getAmount());
+        dto.setNotes(entity.getNotes());
+        dto.setCategory(entity.getCategory());
+        dto.setIsSettled(entity.getIsSettled());
+        dto.setSettledAt(entity.getSettledAt());
+        dto.setCreatedAt(entity.getCreatedAt());
+
+        if (entity.getPaidBy() != null) {
+            dto.setPaidById(entity.getPaidBy().getId());
+            dto.setPaidByName(entity.getPaidBy().getName());
+            dto.setPaidByEmail(entity.getPaidBy().getEmail());
+            dto.setPaidByPicture(entity.getPaidBy().getPictureUrl());
+        }
+
+        if (entity.getOwedBy() != null) {
+            dto.setOwedById(entity.getOwedBy().getId());
+            dto.setOwedByName(entity.getOwedBy().getName());
+            dto.setOwedByEmail(entity.getOwedBy().getEmail());
+            dto.setOwedByPicture(entity.getOwedBy().getPictureUrl());
+        }
+
+        return dto;
+    }
+}

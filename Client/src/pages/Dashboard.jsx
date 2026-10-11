@@ -9,6 +9,7 @@ import Analytics from "../components/Analytics";
 import DeleteTransactionModal from "../components/DeleteTransactionModal";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import Subscriptions from "../components/Subscriptions";
+import SplitExpensesTab from "../components/SplitExpensesTab";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -303,6 +304,7 @@ const Dashboard = () => {
               }
             }}
             onNavigateProfile={() => navigate("/profile")}
+            onSelectTab={setActiveTab}
           />
 
           <section className="relative mt-2 rounded-[2rem] p-8 shadow-2xl overflow-hidden group border border-white/10 bg-white/[0.02] backdrop-blur-3xl">
@@ -376,10 +378,49 @@ const Dashboard = () => {
       <div className="bg-[#FAFAFA] min-h-screen rounded-t-[0.2rem] relative mt-[-2rem] px-5 pt-8 pb-24 shadow-[0_-15px_40px_rgba(0,0,0,0.3)] z-20">
         <div className="max-w-5xl mx-auto">
           <div className="bg-gray-200/50 p-1.5 rounded-2xl flex relative mb-8 h-12">
-            <div className={`absolute top-1.5 bottom-1.5 w-[calc(33.33%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${activeTab === "activity" ? "left-1.5" : activeTab === "analytics" ? "left-[calc(33.33%+2px)]" : "left-[calc(66.66%+2.5px)]"}`}></div>
-            <button onClick={() => setActiveTab("activity")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Activity</button>
-            <button onClick={() => setActiveTab("analytics")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Analytics</button>
-            <button onClick={() => setActiveTab("subscriptions")} className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${activeTab === "subscriptions" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"}`}>Subscriptions</button>
+            <div
+              className={`absolute top-1.5 bottom-1.5 w-[calc(25%-6px)] bg-white rounded-xl shadow-sm transition-all duration-300 ease-out ${
+                activeTab === "activity"
+                  ? "left-1.5"
+                  : activeTab === "analytics"
+                  ? "left-[calc(25%+2px)]"
+                  : activeTab === "subscriptions"
+                  ? "left-[calc(50%+2px)]"
+                  : "left-[calc(75%+2px)]"
+              }`}
+            ></div>
+            <button
+              onClick={() => setActiveTab("activity")}
+              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                activeTab === "activity" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              Activity
+            </button>
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                activeTab === "analytics" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              Analytics
+            </button>
+            <button
+              onClick={() => setActiveTab("subscriptions")}
+              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                activeTab === "subscriptions" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              Subscriptions
+            </button>
+            <button
+              onClick={() => setActiveTab("split")}
+              className={`flex-1 relative z-10 text-[11px] font-bold uppercase tracking-widest transition-colors ${
+                activeTab === "split" ? "text-gray-900" : "text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              Split
+            </button>
           </div>
 
           <div className="animate-fade-in-up">
@@ -403,17 +444,19 @@ const Dashboard = () => {
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
               />
-            ) : (
+            ) : activeTab === "subscriptions" ? (
               <Subscriptions onTransactionActivity={() => {
                 fetchStats(user.id, selectedMonth);
                 loadTransactions(0, true);
               }} />
+            ) : (
+              <SplitExpensesTab user={user} />
             )}
           </div>
         </div>
       </div>
 
-      {activeTab !== "subscriptions" && (
+      {activeTab !== "subscriptions" && activeTab !== "split" && (
         <div className="fixed bottom-6 right-6 z-40">
           <button
             onClick={() => { setTransactionToEdit(null); setIsModalOpen(true); }}

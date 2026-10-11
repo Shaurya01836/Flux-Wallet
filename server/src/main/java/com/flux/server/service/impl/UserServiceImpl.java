@@ -24,6 +24,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserDTO handleGoogleLogin(String email, String name, String pictureUrl) {
+        // Find existing user by email
         Optional<User> existingUser = userRepository.findByEmail(email);
 
         User user;
@@ -31,7 +32,9 @@ public class UserServiceImpl implements UserService {
             user = existingUser.get();
             user.setLastLoginAt(LocalDateTime.now());
             user.setPictureUrl(pictureUrl);
-            user.setName(name);
+            if (user.getName() == null || user.getName().startsWith("User ") || user.getName().isEmpty()) {
+                user.setName(name);
+            }
         } else {
             user = new User();
             user.setEmail(email);
