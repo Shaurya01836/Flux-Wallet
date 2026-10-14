@@ -65,20 +65,18 @@ const SplitWise = () => {
     }
   };
 
-  const handleSettleSingle = async (expenseId) => {
-    const ok = await window.confirm("Mark this expense as settled?");
-    if (!ok) return;
-    try {
-      await api.put(`/api/split/settle/${expenseId}`);
-      if (currentUser) loadSplitData(currentUser.id);
-    } catch (err) {
-      console.error("Failed to settle expense", err);
-      alert("Failed to settle expense. Please try again.");
-    }
-  };
+  // Individual settlement removed; only "Settle All" with a friend is supported.
 
   const handleSettleAllWithFriend = async (friendId, friendName) => {
-    const ok = await window.confirm(`Are you sure you want to settle all pending balances with ${friendName}?`);
+    const friend = balances.friends?.find((f) => f.friendId === friendId);
+    const net = friend?.netAmount || 0;
+    let confirmMsg = `Are you sure you want to settle all pending balances with ${friendName}?`;
+    if (net > 0) {
+      confirmMsg = `${friendName} owes you Rs. ${net.toFixed(2)}. Settle all now?`;
+    } else if (net < 0) {
+      confirmMsg = `You owe ${friendName} Rs. ${Math.abs(net).toFixed(2)}. Send settlement request for approval?`;
+    }
+    const ok = await window.confirm(confirmMsg);
     if (!ok) return;
     setIsSettling(true);
     try {
@@ -506,7 +504,7 @@ const SplitWise = () => {
                             )}
 
                             <p className="text-[10px] text-gray-500 mt-2">
-                              {new Date(exp.createdAt).toLocaleDateString("en-US", {
+                              {new Date(exp.createdAt.endsWith("Z") ? exp.createdAt : exp.createdAt + "Z").toLocaleDateString("en-US", {
                                 month: "short",
                                 day: "numeric",
                                 hour: "2-digit",
@@ -525,15 +523,6 @@ const SplitWise = () => {
                             </p>
 
                             <div className="flex items-center justify-end gap-1.5 mt-2">
-                              {!exp.isSettled && (
-                                <button
-                                  onClick={() => handleSettleSingle(exp.id)}
-                                  className="p-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 transition"
-                                  title="Mark as Settled"
-                                >
-                                  <FaCheckCircle size={13} />
-                                </button>
-                              )}
                               <button
                                 onClick={() => handleDeleteExpense(exp.id)}
                                 className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition"

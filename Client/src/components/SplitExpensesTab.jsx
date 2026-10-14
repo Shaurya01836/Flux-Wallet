@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
+import { createPortal } from "react-dom";
 import {
   FaUserFriends,
   FaPlus,
@@ -9,6 +10,7 @@ import {
   FaCheckDouble,
   FaTrashAlt,
   FaMoneyBillWave,
+  FaInfoCircle,
   FaArrowUp,
   FaArrowDown,
   FaSync,
@@ -18,6 +20,9 @@ import {
   FaLink,
   FaTimes,
   FaHourglassHalf,
+  FaCalendarAlt,
+  FaTag,
+  FaAlignLeft,
   FaPen,
   FaWhatsapp,
 } from "react-icons/fa";
@@ -99,29 +104,6 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
     }
   };
 
-  const handleSettleSingle = async (expense) => {
-    const isPayer = expense.paidById === user?.id; // You are owed the money
-    const hasIncomingRequest = expense.settleRequestedById && expense.settleRequestedById !== user?.id;
-
-    let confirmMsg = "Mark this expense as settled?";
-    if (!isPayer && !hasIncomingRequest) {
-      confirmMsg = "You owe this amount. Send a settlement request to your friend to approve?";
-    } else if (hasIncomingRequest) {
-      confirmMsg = `Your friend requested to settle this. Accept and mark as settled?`;
-    }
-
-    const ok = await window.confirm(confirmMsg);
-    if (!ok) return;
-
-    try {
-      await api.put(`/api/split/settle/${expense.id}?currentUserId=${user.id}`);
-      loadSplitData();
-    } catch (err) {
-      console.error("Failed to settle expense", err);
-      alert(err.response?.data?.message || "Failed to settle expense.");
-    }
-  };
-
   const handleRejectSettle = async (expenseId) => {
     const ok = await window.confirm("Decline this settlement request?");
     if (!ok) return;
@@ -135,7 +117,29 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
   };
 
   const handleSettleAllWithFriend = async (friendId, friendName) => {
-    const ok = await window.confirm(`Settle pending balances with ${friendName}?`);
+    const friend = balances.friends?.find((f) => f.friendId === friendId);
+    const net = friend?.netAmount || 0;
+    const hasPending =
+      (expenses || []).some(
+        (exp) =>
+          !exp.isSettled &&
+          ((exp.paidById === user?.id && exp.owedById === friendId) ||
+            (exp.owedById === user?.id && exp.paidById === friendId))
+      );
+
+    let confirmMsg = `Settle pending balances with ${friendName}?`;
+    if (friend?.friendEmail?.endsWith?.("@offline.flux") || friend?.isOnboarded === false) {
+      // friend may be offline; keep generic
+    }
+    if (net > 0) {
+      confirmMsg = `${friendName} owes you Rs. ${net.toFixed(2)}. Settle all balances now?`;
+    } else if (net < 0) {
+      confirmMsg = `You owe ${friendName} Rs. ${Math.abs(net).toFixed(2)}. Send a settlement request for their approval?`;
+    } else if (hasPending) {
+      confirmMsg = `Settle all pending expenses with ${friendName}?`;
+    }
+
+    const ok = await window.confirm(confirmMsg);
     if (!ok) return;
     setIsSettling(true);
     try {
@@ -265,26 +269,9 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
     window.open(url, "_blank");
   };
 
-  const handleShareWhatsAppSingle = (exp) => {
-    const isPayer = exp.paidById === user?.id;
-    const otherPersonName = isPayer ? exp.owedByName || "Friend" : exp.paidByName || "Friend";
-    const myName = user?.name || "Your Friend";
-    const amountStr = `Rs. ${exp.amount?.toFixed(2) || "0.00"}`;
-    const websiteUrl = window.location.origin.includes("localhost")
-      ? "https://flux-wallet-secure.vercel.app"
-      : window.location.origin;
-
-    const text = `Hey ${otherPersonName}!\n\nJust shared a split expense with you on *Flux Wallet*:\n\n*Expense:* ${exp.title}\n*Amount:* ${amountStr}\n*Paid by:* ${isPayer ? myName : otherPersonName}\n*Category:* ${exp.category || "General"}\n\n*View & settle on Flux Wallet:*\n${websiteUrl}`;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {});
-    }
-
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
-  };
-
   // Mobile sub-tab: "friends" or "activity"
   const [mobileSubTab, setMobileSubTab] = useState("friends");
+  const [detailExpense, setDetailExpense] = useState(null);
 
   // Filtered Friends
   const filteredFriends = useMemo(() => {
@@ -315,6 +302,26 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
     });
   }, [expenses, selectedFriend, activeFilter, user]);
 
+  const getDateLabel = (dateString) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === today.toDateString()) return "Today";
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return date.toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric" });
+  };
+
+  const groupedExpenses = useMemo(() => {
+    const groups = {};
+    displayedExpenses.forEach((exp) => {
+      const d = new Date(exp.createdAt.endsWith("Z") ? exp.createdAt : exp.createdAt + "Z");
+      const dateKey = d.toDateString();
+      if (!groups[dateKey]) groups[dateKey] = [];
+      groups[dateKey].push(exp);
+    });
+    return Object.entries(groups).sort((a, b) => new Date(b[0]) - new Date(a[0]));
+  }, [displayedExpenses]);
   return (
     <section className="pb-10 animate-fade-in space-y-6 sm:space-y-8">
       {/* Tab Top Bar */}
@@ -383,7 +390,7 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
             <h4 className="font-bold text-sm text-gray-900 flex items-center gap-2">
               <FaUserFriends className="text-indigo-600" />
               <span>Friends</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
+              <span className="hidden lg:inline-block text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-medium">
                 {filteredFriends.length}
               </span>
             </h4>
@@ -422,7 +429,7 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
               </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[320px] sm:max-h-[460px] overflow-y-auto pr-1">
               {filteredFriends.map((f) => {
                 const isSelected = selectedFriend?.friendId === f.friendId;
                 return (
@@ -430,10 +437,6 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                     key={f.friendId}
                     onClick={() => {
                       setSelectedFriend(isSelected ? null : f);
-                      // On mobile, switch to activity tab automatically when a friend is tapped
-                      if (window.innerWidth < 1024) {
-                        setMobileSubTab("activity");
-                      }
                     }}
                     className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
                       isSelected
@@ -455,25 +458,7 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-xs font-bold text-gray-900 truncate">{f.friendName}</p>
-                            {f.isOnboarded ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="Joined on Flux">
-                                <FaCheck size={7} /> Onboarded
-                              </span>
-                            ) : f.friendEmail?.includes("@offline.flux") ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200" title="Offline friend - link real email to sync">
-                                Offline Profile
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Pending joining - split history is ready">
-                                <FaClock size={7} /> Pending Invite
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-gray-400 truncate">
-                            {f.friendEmail?.includes("@offline.flux") ? "No email linked yet" : f.friendEmail}
-                          </p>
+                          <p className="text-xs font-bold text-gray-900 truncate">{f.friendName}</p>
                         </div>
                       </div>
 
@@ -502,36 +487,62 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                       </div>
                     </div>
 
-                    {/* Action Bar (when selected) */}
+                    {/* Dropdown detail view (expanded under the selected friend row) */}
                     {isSelected && (
-                      <div className="mt-3 pt-3 border-t border-indigo-100 flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5">
+                      <div className="mt-3 pt-3 border-t border-indigo-100 space-y-3 animate-fade-in">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-[11px] text-gray-400 truncate">
+                            {f.friendEmail?.includes("@offline.flux") ? "No email linked yet" : f.friendEmail}
+                          </p>
+                          {f.isOnboarded ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <FaCheck size={7} /> Onboarded
+                            </span>
+                          ) : f.friendEmail?.includes("@offline.flux") ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Offline Profile
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                              <FaClock size={7} /> Pending Invite
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="rounded-xl bg-white/70 border border-gray-100 p-2.5">
+                            <p className="text-gray-400 font-bold uppercase tracking-wider">You paid for them</p>
+                            <p className="font-extrabold text-gray-900">Rs. {Number(f.youPaidForThem || 0).toFixed(2)}</p>
+                          </div>
+                          <div className="rounded-xl bg-white/70 border border-gray-100 p-2.5">
+                            <p className="text-gray-400 font-bold uppercase tracking-wider">They paid for you</p>
+                            <p className="font-extrabold text-gray-900">Rs. {Number(f.theyPaidForYou || 0).toFixed(2)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteFriend(f.friendId, f.friendName);
+                              if (window.innerWidth < 1024) {
+                                setMobileSubTab("activity");
+                              }
                             }}
-                            className="px-2.5 py-1.5 rounded-xl text-gray-400 hover:text-rose-600 hover:bg-rose-50 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                            title="Delete Friend"
+                            className="lg:hidden px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
                           >
-                            <FaTrashAlt size={10} />
-                            <span>Delete</span>
+                            <FaReceipt size={10} />
+                            <span>Open Activity</span>
                           </button>
-
-                          {/* WhatsApp Share Button */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleShareWhatsAppForFriend(f);
                             }}
-                            className="px-2.5 py-1.5 rounded-xl text-emerald-600 hover:bg-emerald-50 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                            title="Share split summary with friend on WhatsApp"
+                            className="px-3 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
                           >
                             <FaWhatsapp size={12} className="text-emerald-500" />
                             <span>Share</span>
                           </button>
-
-                          {/* Link Email Button if not already joined or if offline */}
                           {!f.isOnboarded && (
                             <button
                               onClick={(e) => {
@@ -539,28 +550,42 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                                 setFriendToLinkEmail(f);
                                 setIsLinkEmailModalOpen(true);
                               }}
-                              className="px-2.5 py-1.5 rounded-xl text-indigo-600 hover:bg-indigo-50 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
-                              title="Link / Update friend email so it syncs when they sign up"
+                              className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
                             >
                               <FaLink size={10} />
                               <span>{f.friendEmail?.includes("@offline.flux") ? "Link Email" : "Change Email"}</span>
                             </button>
                           )}
-                        </div>
-
-                        {f.netAmount !== 0 && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleSettleAllWithFriend(f.friendId, f.friendName);
+                              handleDeleteFriend(f.friendId, f.friendName);
                             }}
-                            disabled={isSettling}
-                            className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ml-auto"
+                            className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer"
                           >
-                            <FaCheckDouble size={10} />
-                            <span>Settle All</span>
+                            <FaTrashAlt size={10} />
+                            <span>Delete</span>
                           </button>
-                        )}
+                          {(f.netAmount !== 0 ||
+                            (expenses || []).some(
+                              (exp) =>
+                                !exp.isSettled &&
+                                ((exp.paidById === user?.id && exp.owedById === f.friendId) ||
+                                  (exp.owedById === user?.id && exp.paidById === f.friendId))
+                            )) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSettleAllWithFriend(f.friendId, f.friendName);
+                              }}
+                              disabled={isSettling}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer ml-auto"
+                            >
+                              <FaCheckDouble size={10} />
+                              <span>Settle All</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -568,6 +593,9 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
               })}
             </div>
           )}
+
+          {/* Friend details are now shown as a dropdown directly under the selected friend row */}
+
         </div>
 
         {/* Right Column: Expense Activities */}
@@ -661,8 +689,16 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
               </p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-              {displayedExpenses.map((exp) => {
+            <div className="max-h-[320px] sm:max-h-[460px] overflow-y-auto pr-1">
+              {groupedExpenses.map(([dateKey, groupItems]) => (
+                <div key={dateKey} className="relative mb-6 last:mb-0">
+                  <div className="py-2 mb-2">
+                    <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest bg-gray-100 px-3 py-1 rounded-md inline-block">
+                      {getDateLabel(dateKey)}
+                    </h4>
+                  </div>
+                  <div className="space-y-3">
+                    {groupItems.map((exp) => {
                 const isPayer = exp.paidById === user?.id;
                 const otherPerson = isPayer
                   ? { name: exp.owedByName, email: exp.owedByEmail }
@@ -679,114 +715,31 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h5 className="font-bold text-xs text-gray-900 truncate">
-                            {exp.title}
-                          </h5>
-                          <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                            {exp.category || "General"}
-                          </span>
-                          {exp.isSettled ? (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <FaCheckCircle size={8} /> Settled
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-bold text-xs text-gray-900 truncate">
+                              {exp.title}
+                            </h5>
+                          </div>
+                          {exp.category === "Settlement" && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Settled All
                             </span>
-                          ) : exp.settleRequestedById ? (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <FaHourglassHalf size={8} /> Settle Requested
-                            </span>
-                          ) : exp.deleteRequestedById ? (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                              <FaTrashAlt size={8} /> Delete Requested
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                              Pending
+                          )}
+                          {exp.category === "Settlement Request" && (
+                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Settle All Requested
                             </span>
                           )}
                         </div>
-
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          {isPayer ? (
-                            <span>
-                              You paid • <strong className="text-gray-800">{otherPerson.name}</strong> owes you
-                            </span>
-                          ) : (
-                            <span>
-                              <strong className="text-gray-800">{otherPerson.name}</strong> paid • You owe
-                            </span>
-                          )}
+                        <p className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-widest truncate">
+                          {exp.category || "General"}
                         </p>
-
-                        {/* Settlement Request Banner */}
-                        {exp.settleRequestedById && !exp.isSettled && (
-                          <div className="mt-2 p-2 rounded-xl bg-indigo-50/70 border border-indigo-100 flex items-center justify-between gap-2 flex-wrap text-[10px]">
-                            <span className="text-indigo-800 font-semibold">
-                              {exp.settleRequestedById === user?.id
-                                ? "⏳ Waiting for friend to approve settlement"
-                                : `📩 ${exp.settleRequestedByName || "Friend"} requested to settle this`}
-                            </span>
-                            {exp.settleRequestedById !== user?.id && (
-                              <div className="flex items-center gap-1 ml-auto">
-                                <button
-                                  onClick={() => handleSettleSingle(exp)}
-                                  className="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer transition shadow-xs"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={() => handleRejectSettle(exp.id)}
-                                  className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold cursor-pointer transition"
-                                >
-                                  Decline
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Delete Request Banner */}
-                        {exp.deleteRequestedById && !exp.isSettled && (
-                          <div className="mt-2 p-2 rounded-xl bg-rose-50/70 border border-rose-100 flex items-center justify-between gap-2 flex-wrap text-[10px]">
-                            <span className="text-rose-800 font-semibold">
-                              {exp.deleteRequestedById === user?.id
-                                ? "⏳ Waiting for friend to approve deletion"
-                                : `⚠️ ${exp.deleteRequestedByName || "Friend"} requested to delete this record`}
-                            </span>
-                            {exp.deleteRequestedById !== user?.id && (
-                              <div className="flex items-center gap-1 ml-auto">
-                                <button
-                                  onClick={() => handleDeleteExpense(exp)}
-                                  className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer transition shadow-xs"
-                                >
-                                  Confirm Delete
-                                </button>
-                                <button
-                                  onClick={() => handleRejectDelete(exp.id)}
-                                  className="px-2 py-0.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold cursor-pointer transition"
-                                >
-                                  Keep Record
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {exp.notes && (
-                          <p className="text-[10px] text-gray-400 mt-1 italic">
-                            {exp.notes}
-                          </p>
-                        )}
-
                         <p className="text-[9px] text-gray-400 mt-1.5">
-                          {new Date(exp.createdAt).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {isPayer ? `${otherPerson.name} owes you` : `You owe ${otherPerson.name}`}
                         </p>
-                      </div>
 
+                      </div>
                       <div className="text-right shrink-0">
                         <p
                           className={`text-sm font-extrabold ${
@@ -795,69 +748,25 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
                         >
                           {isPayer ? "+" : "-"}Rs.{exp.amount?.toFixed(2)}
                         </p>
-
-                        <div className="flex items-center justify-end gap-1.5 mt-2">
-                          {!exp.isSettled && (
-                            <>
-                              <button
-                                onClick={() => handleShareWhatsAppSingle(exp)}
-                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition cursor-pointer"
-                                title="Share this expense on WhatsApp"
-                              >
-                                <FaWhatsapp size={12} />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setExpenseToEdit(exp);
-                                  setIsModalOpen(true);
-                                }}
-                                className="p-1.5 rounded-lg bg-gray-50 hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition cursor-pointer"
-                                title="Edit Expense"
-                              >
-                                <FaPen size={11} />
-                              </button>
-                              <button
-                                onClick={() => handleSettleSingle(exp)}
-                                disabled={exp.settleRequestedById === user?.id}
-                                className={`p-1.5 rounded-lg transition ${
-                                  exp.settleRequestedById === user?.id
-                                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                    : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600 cursor-pointer"
-                                }`}
-                                title={
-                                  isPayer
-                                    ? "Mark as Settled"
-                                    : exp.settleRequestedById === user?.id
-                                    ? "Settlement requested - awaiting friend confirmation"
-                                    : "Request friend to settle"
-                                }
-                              >
-                                <FaCheckCircle size={12} />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={() => handleDeleteExpense(exp)}
-                            disabled={exp.deleteRequestedById === user?.id}
-                            className={`p-1.5 rounded-lg transition ${
-                              exp.deleteRequestedById === user?.id
-                                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                                : "bg-gray-50 hover:bg-rose-50 text-gray-400 hover:text-rose-600 cursor-pointer"
-                            }`}
-                            title={
-                              exp.deleteRequestedById === user?.id
-                                ? "Deletion requested - awaiting confirmation"
-                                : "Delete Expense"
-                            }
-                          >
-                            <FaTrashAlt size={11} />
-                          </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailExpense(exp);
+                          }}
+                          className="p-2 text-gray-300 hover:text-blue-500 transition hover:bg-blue-50 rounded-md"
+                          title="Details"
+                        >
+                          <FaInfoCircle size={12} />
+                        </button>
                         </div>
                       </div>
                     </div>
-                  </div>
                 );
               })}
+            </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -900,6 +809,217 @@ const SplitExpensesTab = forwardRef(({ user, onSplitActivity }, ref) => {
         currentUser={user}
         friend={friendToLinkEmail}
       />
+
+      {/* Split Expense Detail Modal */}
+      {detailExpense && createPortal((() => {
+        const isPayer = detailExpense.paidById === user?.id;
+        const otherPerson = isPayer
+          ? { name: detailExpense.owedByName, email: detailExpense.owedByEmail }
+          : { name: detailExpense.paidByName, email: detailExpense.paidByEmail };
+        const formattedDate = new Date(
+          detailExpense.createdAt.endsWith("Z") ? detailExpense.createdAt : detailExpense.createdAt + "Z"
+        ).toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/25 backdrop-blur-sm animate-fade-in"
+            onClick={() => setDetailExpense(null)}
+          >
+            <div
+              className="bg-white rounded-3xl w-[92%] max-w-xs sm:max-w-sm max-h-[80vh] overflow-y-auto shadow-2xl transform transition-all animate-scale-up border border-gray-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="relative p-6 pb-8 text-center bg-gray-50 border-b border-gray-100">
+                <button
+                  onClick={() => setDetailExpense(null)}
+                  className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-800 hover:bg-gray-200 rounded-full transition-colors"
+                >
+                  <FaTimes size={14} />
+                </button>
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">{detailExpense.title}</h2>
+                <p className="text-sm font-bold tracking-widest uppercase text-gray-400">
+                  {detailExpense.category || "General"}
+                </p>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-6">
+                <div className="text-center">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Amount</p>
+                  <p className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${isPayer ? "text-emerald-500" : "text-gray-900"}`}>
+                    {isPayer ? "+" : "-"} Rs.{detailExpense.amount?.toFixed(2)}
+                  </p>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 shrink-0">
+                      <FaCalendarAlt size={14} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Date & Time</p>
+                      <p className="text-sm font-medium text-gray-900 mt-0.5">{formattedDate}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 shrink-0">
+                      <FaTag size={14} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Friend</p>
+                      <p className="text-sm font-medium text-gray-900 mt-0.5">
+                        {otherPerson.name}
+                        {isPayer ? " owes you" : " paid • you owe"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {detailExpense.notes && (
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 shrink-0">
+                        <FaAlignLeft size={14} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Notes</p>
+                        <p className="text-sm font-medium text-gray-900 mt-0.5 whitespace-pre-wrap">
+                          {detailExpense.notes}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 shrink-0">
+                      <FaTag size={14} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Status</p>
+                      <p className="text-sm font-medium text-gray-900 mt-0.5">
+                        {detailExpense.isSettled
+                          ? "Settled"
+                          : detailExpense.settleRequestedById
+                          ? "Settle Requested"
+                          : detailExpense.deleteRequestedById
+                          ? "Delete Requested"
+                          : "Pending"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Settlement Request Banner */}
+                  {detailExpense.settleRequestedById && !detailExpense.isSettled && (
+                    <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-[10px] space-y-2">
+                      <span className="text-indigo-800 font-semibold block">
+                        {detailExpense.settleRequestedById === user?.id
+                          ? "⏳ Waiting for friend to approve settlement"
+                          : `📩 ${detailExpense.settleRequestedByName || "Friend"} requested to settle this`}
+                      </span>
+                      {detailExpense.settleRequestedById !== user?.id && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              const fid = detailExpense.paidById === user?.id ? detailExpense.owedById : detailExpense.paidById;
+                              const fname = detailExpense.paidById === user?.id ? detailExpense.owedByName : detailExpense.paidByName;
+                              handleSettleAllWithFriend(fid, fname);
+                              setDetailExpense(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                          >
+                            Accept All
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleRejectSettle(detailExpense.id);
+                              setDetailExpense(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Delete Request Banner */}
+                  {detailExpense.deleteRequestedById && !detailExpense.isSettled && (
+                    <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-100 text-[10px] space-y-2">
+                      <span className="text-rose-800 font-semibold block">
+                        {detailExpense.deleteRequestedById === user?.id
+                          ? "⏳ Waiting for friend to approve deletion"
+                          : `⚠️ ${detailExpense.deleteRequestedByName || "Friend"} requested to delete this record`}
+                      </span>
+                      {detailExpense.deleteRequestedById !== user?.id && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              handleDeleteExpense(detailExpense);
+                              setDetailExpense(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold"
+                          >
+                            Confirm Delete
+                          </button>
+                          <button
+                            onClick={() => {
+                              handleRejectDelete(detailExpense.id);
+                              setDetailExpense(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold"
+                          >
+                            Keep Record
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+              </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-2">
+                {!detailExpense.isSettled && (
+                  <button
+                    onClick={() => {
+                      setExpenseToEdit(detailExpense);
+                      setIsModalOpen(true);
+                      setDetailExpense(null);
+                    }}
+                    className="flex-1 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"
+                  >
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    handleDeleteExpense(detailExpense);
+                    setDetailExpense(null);
+                  }}
+                  className="flex-1 py-2.5 bg-white border border-rose-200 text-rose-600 font-bold rounded-xl hover:bg-rose-50 transition-colors shadow-sm"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setDetailExpense(null)}
+                  className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-100 transition-colors shadow-sm"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })(), document.body)}
     </section>
   );
 });

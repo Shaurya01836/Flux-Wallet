@@ -399,8 +399,12 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
                 (friend.getEmail() != null && friend.getEmail().endsWith("@offline.flux"));
 
         LocalDateTime now = LocalDateTime.now();
+        boolean changed = false;
+        boolean settledAny = false;
+        boolean requestedAny = false;
         for (SplitExpense exp : expenses) {
             if (!Boolean.TRUE.equals(exp.getIsSettled())) {
+                changed = true;
                 boolean isPaidBy = exp.getPaidBy().getId().equals(currentUserId);
                 if (isPaidBy || friendIsOffline || 
                     (exp.getSettlementRequestedBy() != null && !exp.getSettlementRequestedBy().getId().equals(currentUserId))) {
@@ -408,12 +412,42 @@ public class SplitExpenseServiceImpl implements SplitExpenseService {
                     exp.setSettledAt(now);
                     exp.setSettlementRequestedBy(null);
                     exp.setSettlementRequestedAt(null);
+                    settledAny = true;
                 } else {
                     exp.setSettlementRequestedBy(currentUser);
                     exp.setSettlementRequestedAt(now);
+                    requestedAny = true;
                 }
                 splitExpenseRepository.save(exp);
             }
+        }
+
+        // Create a distinct settlement record in activity so the user can see
+        // "settled all" performed at this date (separate from normal expenses).
+        if (changed) {
+            SplitExpense settlement = new SplitExpense();
+            if (settledAny && !requestedAny) {
+                settlement.setTitle("Settled All");
+                settlement.setNotes("All pending balances settled on this date.");
+                settlement.setCategory("Settlement");
+            } else if (requestedAny && !settledAny) {
+                settlement.setTitle("Settle All Requested");
+                settlement.setNotes("Settlement request sent for approval.");
+                settlement.setCategory("Settlement Request");
+            } else {
+                settlement.setTitle("Settle All");
+                settlement.setNotes("Settlement completed where possible; some requests sent for approval.");
+                settlement.setCategory("Settlement");
+            }
+            settlement.setAmount(0.0);
+            settlement.setPaidBy(currentUser);
+            settlement.setOwedBy(friend);
+            settlement.setIsSettled(settledAny && !requestedAny);
+            settlement.setSettledAt(settledAny && !requestedAny ? now : null);
+            settlement.setCreatedAt(now);
+            splitExpenseRepository.save(settlement);
+            ensureFriendship(currentUser, friend);
+            ensureFriendship(friend, currentUser);
         }
     }
 

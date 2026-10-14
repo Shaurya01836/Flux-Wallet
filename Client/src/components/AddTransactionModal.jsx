@@ -52,7 +52,7 @@ const AddTransactionModal = ({ isOpen, onClose, onTransactionAdded, transactionT
           const [year, month, day] = form.date.split('-').map(Number);
           let hours = 0, minutes = 0, seconds = 0;
           if (transactionToEdit && transactionToEdit.date) {
-              const original = new Date(transactionToEdit.date);
+              const original = new Date(transactionToEdit.date.endsWith("Z") ? transactionToEdit.date : transactionToEdit.date + "Z");
               hours = original.getHours();
               minutes = original.getMinutes();
               seconds = original.getSeconds();

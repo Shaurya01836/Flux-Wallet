@@ -19,7 +19,7 @@ const Transaction = ({
   const groupedTransactions = useMemo(() => {
     const groups = {};
     transactions.forEach((t) => {
-      const dateKey = new Date(t.date).toDateString();
+      const dateKey = new Date(t.date.endsWith("Z") ? t.date : t.date + "Z").toDateString();
       if (!groups[dateKey]) groups[dateKey] = [];
       groups[dateKey].push(t);
     });

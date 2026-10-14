@@ -135,7 +135,7 @@ const AddSplitExpenseModal = ({
         const [year, month, day] = date.split("-").map(Number);
         let hours = 12, minutes = 0, seconds = 0;
         if (expenseToEdit && expenseToEdit.createdAt) {
-          const original = new Date(expenseToEdit.createdAt);
+          const original = new Date(expenseToEdit.createdAt.endsWith("Z") ? expenseToEdit.createdAt : expenseToEdit.createdAt + "Z");
           hours = original.getHours();
           minutes = original.getMinutes();
           seconds = original.getSeconds();

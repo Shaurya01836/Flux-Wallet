@@ -59,7 +59,7 @@ const Analytics = ({
     const daysInMonth = new Date(year, month, 0).getDate();
     
     const grouped = expenses.reduce((acc, t) => {
-      const day = new Date(t.date).getDate();
+      const day = new Date(t.date.endsWith("Z") ? t.date : t.date + "Z").getDate();
       acc[day] = (acc[day] || 0) + t.amount;
       return acc;
     }, {});

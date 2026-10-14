@@ -66,7 +66,8 @@ const Profile = () => {
 
     const formatDate = (dateString) => {
         if (!dateString) return "";
-        return new Date(dateString).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const v = dateString.endsWith("Z") ? dateString : dateString + "Z";
+        return new Date(v).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     };
 
     if (!user) return null;

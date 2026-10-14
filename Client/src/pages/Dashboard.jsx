@@ -158,7 +158,7 @@ const Dashboard = () => {
 
       const dueTotal = activeSubs.filter((s) => {
         if (!s.nextBillingDate) return false;
-        const d = new Date(s.nextBillingDate);
+        const d = new Date(s.nextBillingDate.endsWith("Z") ? s.nextBillingDate : s.nextBillingDate + "Z");
         return d >= today && d <= nextWeek;
       }).reduce((acc, s) => acc + s.amount, 0);
 

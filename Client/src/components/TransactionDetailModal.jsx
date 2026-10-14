@@ -6,7 +6,7 @@ const TransactionDetailModal = ({ isOpen, onClose, transaction }) => {
 
   const isCredit = transaction.type === "CREDIT";
 
-  const formattedDate = new Date(transaction.date).toLocaleDateString("en-US", {
+  const formattedDate = new Date(transaction.date.endsWith("Z") ? transaction.date : transaction.date + "Z").toLocaleDateString("en-US", {
     weekday: "long",
     year: "numeric",
     month: "long",

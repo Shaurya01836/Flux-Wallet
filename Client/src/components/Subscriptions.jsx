@@ -197,7 +197,7 @@ const Subscriptions = forwardRef(({ onTransactionActivity }, ref) => {
 
     return subscriptions.filter(sub => {
       if (sub.status !== "ACTIVE" || !sub.nextBillingDate) return false;
-      const dueDate = new Date(sub.nextBillingDate);
+      const dueDate = new Date(sub.nextBillingDate.endsWith("Z") ? sub.nextBillingDate : sub.nextBillingDate + "Z");
       return dueDate >= today && dueDate <= nextWeek;
     });
   }, [subscriptions]);
@@ -205,7 +205,7 @@ const Subscriptions = forwardRef(({ onTransactionActivity }, ref) => {
   const getDaysLeft = (dueDateStr) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const due = new Date(dueDateStr);
+    const due = new Date(dueDateStr.endsWith("Z") ? dueDateStr : dueDateStr + "Z");
     due.setHours(0, 0, 0, 0);
 
     const diffTime = due.getTime() - today.getTime();
